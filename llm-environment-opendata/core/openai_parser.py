@@ -20,41 +20,13 @@ class OpenAIParserError(RuntimeError):
     pass
 
 
+class OpenAISummaryError(RuntimeError):
+    pass
+
+
 def parse_application_description_with_openai(text):
     settings = load_openai_settings()
-    payload = {
-        "model": settings["model"],
-        "temperature": 0,
-        "response_format": {"type": "json_object"},
-        "messages": build_messages(text),
-    }
-    body = json.dumps(payload).encode("utf-8")
-    req = request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {settings['api_key']}",
-            "Content-Type": "application/json",
-        },
-    )
-
-    try:
-        ssl_context = ssl.create_default_context(cafile=certifi.where())
-        with request.urlopen(req, timeout=60, context=ssl_context) as response:
-            raw = response.read().decode("utf-8")
-    except error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise OpenAIParserError(f"OpenAI API error {exc.code}: {detail}") from exc
-    except error.URLError as exc:
-        raise OpenAIParserError(f"OpenAI API connection error: {exc}") from exc
-
-    try:
-        completion = json.loads(raw)
-        content = completion["choices"][0]["message"]["content"]
-        parsed = json.loads(content)
-    except (KeyError, IndexError, json.JSONDecodeError) as exc:
-        raise OpenAIParserError(f"Invalid OpenAI response format: {raw[:500]}") from exc
+    parsed = openai_chat_json(settings, build_messages(text), OpenAIParserError)
 
     payload = {
         "scenario_id": parsed.get("scenario_id", "llm-parsed-application"),
@@ -77,6 +49,13 @@ def parse_application_description_with_openai(text):
         parser_notes = [str(parser_notes)]
     parser_meta = {"mode": "openai", "model": settings["model"]}
     return payload, parser_notes, parser_meta
+
+
+def generate_evaluation_summary(description, parsed_payload, result, factor_rows, parser_meta):
+    settings = load_openai_settings()
+    messages = build_summary_messages(description, parsed_payload, result, factor_rows, parser_meta)
+    response = openai_chat_text(settings, messages, OpenAISummaryError)
+    return response.strip()
 
 
 def normalize_components(components):
@@ -123,6 +102,56 @@ def parse_dotenv(path):
     return values
 
 
+def openai_chat_json(settings, messages, error_cls):
+    raw = do_openai_request(settings, messages, response_format={"type": "json_object"})
+    try:
+        completion = json.loads(raw)
+        content = completion["choices"][0]["message"]["content"]
+        return json.loads(content)
+    except (KeyError, IndexError, json.JSONDecodeError) as exc:
+        raise error_cls(f"Invalid OpenAI response format: {raw[:500]}") from exc
+
+
+def openai_chat_text(settings, messages, error_cls):
+    raw = do_openai_request(settings, messages)
+    try:
+        completion = json.loads(raw)
+        return completion["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, json.JSONDecodeError) as exc:
+        raise error_cls(f"Invalid OpenAI response format: {raw[:500]}") from exc
+
+
+def do_openai_request(settings, messages, response_format=None):
+    payload = {
+        "model": settings["model"],
+        "temperature": 0,
+        "messages": messages,
+    }
+    if response_format is not None:
+        payload["response_format"] = response_format
+
+    body = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {settings['api_key']}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    try:
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        with request.urlopen(req, timeout=60, context=ssl_context) as response:
+            return response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise OpenAIParserError(f"OpenAI API error {exc.code}: {detail}") from exc
+    except error.URLError as exc:
+        raise OpenAIParserError(f"OpenAI API connection error: {exc}") from exc
+
+
 def build_messages(text):
     schema = {
         "scenario_id": "short-kebab-case-identifier",
@@ -162,6 +191,35 @@ def build_messages(text):
         "Parse the following application description into the required JSON structure.\n\n"
         f"Target JSON shape:\n{json.dumps(schema, ensure_ascii=False, indent=2)}\n\n"
         f"Application description:\n{text}"
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+
+
+def build_summary_messages(description, parsed_payload, result, factor_rows, parser_meta):
+    system = (
+        "You write concise academic-style summaries in French for an environmental LLM estimation tool. "
+        "Explain which values were retained, how the calculation was performed, and what the main limitations are. "
+        "Be explicit about sources and assumptions. "
+        "Return plain French text only, no markdown title."
+    )
+    user_payload = {
+        "description": description,
+        "parser_meta": parser_meta,
+        "parsed_payload": parsed_payload,
+        "result": result,
+        "selected_factors": factor_rows,
+    }
+    user = (
+        "Produce a short French synthesis for the user after the evaluation. "
+        "It must explain: "
+        "1) the scenario retained, "
+        "2) the main values retained from the literature, "
+        "3) the method of calculation, "
+        "4) the main uncertainties and limits.\n\n"
+        f"Input data:\n{json.dumps(user_payload, ensure_ascii=False, indent=2)}"
     )
     return [
         {"role": "system", "content": system},

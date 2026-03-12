@@ -11,7 +11,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.estimator import estimate_feature_externalities, get_record, load_records
-from core.openai_parser import OpenAIParserError, parse_application_description_with_openai
+from core.openai_parser import (
+    OpenAIParserError,
+    OpenAISummaryError,
+    generate_evaluation_summary,
+    parse_application_description_with_openai,
+)
 
 
 PROJECT_NAME = "EcoTrace LLM"
@@ -43,10 +48,11 @@ def process_description(form):
     records = load_records()
     result = estimate_feature_externalities(records, parsed_payload)
     rows = factor_details(records, result["selected_factors"])
-    return description, parsed_payload, parser_notes, parser_meta, result, rows
+    summary = generate_evaluation_summary(description, parsed_payload, result, rows, parser_meta)
+    return description, parsed_payload, parser_notes, parser_meta, result, rows, summary
 
 
-def render_page(result=None, description="", parsed_payload=None, parser_notes=None, parser_meta=None, factor_rows=None, error_message=None):
+def render_page(result=None, description="", parsed_payload=None, parser_notes=None, parser_meta=None, factor_rows=None, summary_text=None, error_message=None):
     error_block = ""
     if error_message:
         error_block = f"""
@@ -111,6 +117,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
               {''.join(f'<li>{escape(item)}</li>' for item in result['assumptions'] + (parser_notes or []))}
             </ul>
           </article>
+        </section>
+
+        <section class="panel">
+          <h3>Synthèse automatique</h3>
+          <p class="lead">{escape(summary_text or "")}</p>
         </section>
 
         <section class="panel">
@@ -280,24 +291,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     <form class="panel" method="post" action="/">
       <label for="description">Description libre de l'application</label>
       <textarea id="description" name="description" placeholder="Exemple: Nous avons un assistant RAG sur GPT-4 via API, utilisé 4000 fois par mois en France. Chaque requête envoie 2200 input tokens et reçoit 500 output tokens. Il y a une base vectorielle, des embeddings et du logging.">{escape(description)}</textarea>
-      <div class="row">
-        <div>
-          <label for="monthly_uses">Usages mensuels (optionnel)</label>
-          <input id="monthly_uses" name="monthly_uses" placeholder="10000">
-        </div>
-        <div>
-          <label for="input_tokens">Tokens entrée (optionnel)</label>
-          <input id="input_tokens" name="input_tokens" placeholder="1200">
-        </div>
-        <div>
-          <label for="output_tokens">Tokens sortie (optionnel)</label>
-          <input id="output_tokens" name="output_tokens" placeholder="350">
-        </div>
-        <div>
-          <label for="requests_per_feature">Appels LLM / usage (optionnel)</label>
-          <input id="requests_per_feature" name="requests_per_feature" placeholder="1">
-        </div>
-      </div>
       <button type="submit">Evaluer l'application</button>
     </form>
     {error_block}
@@ -341,7 +334,7 @@ def render_component_row(row):
     )
 
 
-def render_report_document(description, parsed_payload, parser_notes, parser_meta, result, factor_rows):
+def render_report_document(description, parsed_payload, parser_notes, parser_meta, result, factor_rows, summary_text):
     overhead = result["software_overhead"]
     annual = result["annual_total"]
     return f"""<!doctype html>
@@ -389,6 +382,10 @@ def render_report_document(description, parsed_payload, parser_notes, parser_met
     <ul>
       {''.join(f'<li>{escape(item)}</li>' for item in result['assumptions'] + (parser_notes or []))}
     </ul>
+  </div>
+  <div class="box">
+    <h2>Synthèse automatique</h2>
+    <p>{escape(summary_text)}</p>
   </div>
   <div class="box">
     <h2>Bilan logiciel détaillé</h2>
@@ -449,13 +446,13 @@ class Handler(BaseHTTPRequestHandler):
         description = form.get("description", [""])[0]
 
         try:
-            description, parsed_payload, parser_notes, parser_meta, result, rows = process_description(form)
-        except OpenAIParserError as exc:
+            description, parsed_payload, parser_notes, parser_meta, result, rows, summary_text = process_description(form)
+        except (OpenAIParserError, OpenAISummaryError) as exc:
             self._write_html(render_page(description=description, error_message=str(exc)), status=502)
             return
 
         if self.path == "/report":
-            report = render_report_document(description, parsed_payload, parser_notes, parser_meta, result, rows)
+            report = render_report_document(description, parsed_payload, parser_notes, parser_meta, result, rows, summary_text)
             self._write_html(report, attachment_name="ecotrace-llm-report.html")
             return
 
@@ -467,18 +464,13 @@ class Handler(BaseHTTPRequestHandler):
                 parser_notes=parser_notes,
                 parser_meta=parser_meta,
                 factor_rows=rows,
+                summary_text=summary_text,
             )
         )
 
 
 def apply_overrides(payload, form):
-    for field in ("monthly_uses", "input_tokens", "output_tokens", "requests_per_feature"):
-        if field in form and form[field][0].strip():
-            value = float(form[field][0].strip().replace(",", "."))
-            if field == "monthly_uses":
-                payload["feature_uses_per_month"] = value
-            else:
-                payload[field] = value
+    return payload
 
 
 if __name__ == "__main__":
