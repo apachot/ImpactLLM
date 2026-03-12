@@ -12,9 +12,11 @@ if str(ROOT) not in sys.path:
 
 from core.estimator import estimate_feature_externalities, get_record, load_records
 from core.openai_parser import (
+    OpenAIModerationError,
     OpenAIParserError,
     OpenAISummaryError,
     generate_evaluation_summary,
+    moderate_application_description_with_openai,
     parse_application_description_with_openai,
 )
 
@@ -43,7 +45,18 @@ def factor_details(records, factor_ids):
 
 def process_description(form):
     description = form.get("description", [""])[0]
+    moderation = moderate_application_description_with_openai(description)
+    if moderation["decision"] != "allow":
+        guidance = (
+            "Décris une application, une fonctionnalité ou un workflow utilisant un LLM, "
+            "avec son usage, son volume ou son contexte technique."
+        )
+        raise OpenAIModerationError(
+            f"Description refusée par le filtre d'usage ({moderation['decision']}) via {moderation['model']}: "
+            f"{moderation['reason']} {guidance}"
+        )
     parsed_payload, parser_notes, parser_meta = parse_application_description_with_openai(description)
+    parser_meta["moderation"] = moderation
     apply_overrides(parsed_payload, form)
     records = load_records()
     result = estimate_feature_externalities(records, parsed_payload)
@@ -66,57 +79,16 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     result_block = ""
     if result:
         annual = result["annual_total"]
-        llm = result["annual_llm"]
         overhead = result["software_overhead"]
         result_block = f"""
         <section class="panel result">
-          <div class="split-header">
-            <div>
-              <h2>Evaluation environnementale</h2>
-              <p class="lead">EcoTrace LLM confie l'interprétation du scénario à OpenAI, sélectionne les facteurs du corpus scientifique, puis calcule une estimation expliquée et traçable.</p>
-            </div>
-            {render_export_form(description)}
-          </div>
+          <h2>Evaluation environnementale</h2>
+          <p class="lead">EcoTrace LLM confie l'interprétation du scénario à OpenAI, sélectionne les facteurs du corpus scientifique, puis calcule une estimation expliquée et traçable.</p>
           <div class="metrics">
             <div class="metric"><span class="label">Energie annuelle totale</span><strong>{annual['energy_wh']['low']:.1f} - {annual['energy_wh']['high']:.1f} Wh</strong></div>
             <div class="metric"><span class="label">Carbone annuel total</span><strong>{annual['carbon_gco2e']['low']:.1f} - {annual['carbon_gco2e']['high']:.1f} gCO2e</strong></div>
             <div class="metric"><span class="label">Eau annuelle totale</span><strong>{annual['water_ml']['low']:.1f} - {annual['water_ml']['high']:.1f} mL</strong></div>
           </div>
-        </section>
-
-        <section class="grid">
-          <article class="panel">
-            <h3>Lecture rapide</h3>
-            <ul>
-              <li>Impact direct LLM annualisé: {llm['energy_wh']['low']:.1f} - {llm['energy_wh']['high']:.1f} Wh</li>
-              <li>Impact logiciel hors LLM: {overhead['annual_energy_wh']:.1f} Wh</li>
-              <li>Niveau d'incertitude: {escape(result['uncertainty_level'])}</li>
-              <li>Portée: {escape(result['applicability_note'])}</li>
-            </ul>
-          </article>
-          <article class="panel">
-            <h3>Méthode utilisée</h3>
-            <ol>
-              <li>Interprétation sémantique de la description libre par le modèle OpenAI configuré.</li>
-              <li>Sélection de facteurs d'impact comparables dans le corpus scientifique.</li>
-              <li>Ajustement par taille de prompt, intensité carbone et intensité eau.</li>
-              <li>Annualisation de la fonctionnalité et agrégation des postes logiciels.</li>
-            </ol>
-            <p class="lead">Mode: {escape((parser_meta or {}).get('mode', 'unknown'))} | Modèle: {escape((parser_meta or {}).get('model', 'unknown'))}</p>
-          </article>
-        </section>
-
-        <section class="grid">
-          <article class="panel">
-            <h3>Description interprétée</h3>
-            <pre>{escape(json.dumps(parsed_payload, ensure_ascii=False, indent=2))}</pre>
-          </article>
-          <article class="panel">
-            <h3>Hypothèses et notes du parseur</h3>
-            <ul>
-              {''.join(f'<li>{escape(item)}</li>' for item in result['assumptions'] + (parser_notes or []))}
-            </ul>
-          </article>
         </section>
 
         <section class="panel">
@@ -249,12 +221,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       gap: 18px;
       margin-top: 18px;
     }}
-    .split-header {{
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      align-items: start;
-    }}
     pre {{
       margin: 0;
       white-space: pre-wrap;
@@ -276,7 +242,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     a {{ color: var(--accent-2); }}
     @media (max-width: 900px) {{
       .row, .metrics, .grid {{ grid-template-columns: 1fr; }}
-      .split-header {{ flex-direction: column; }}
     }}
   </style>
 </head>
@@ -299,15 +264,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
 </body>
 </html>
 """
-
-
-def render_export_form(description):
-    return f"""
-    <form method="post" action="/report">
-      <input type="hidden" name="description" value="{escape(description)}">
-      <button class="ghost-button" type="submit">Exporter le rapport HTML</button>
-    </form>
-    """
 
 
 def render_factor_row(row):
@@ -334,104 +290,11 @@ def render_component_row(row):
     )
 
 
-def render_report_document(description, parsed_payload, parser_notes, parser_meta, result, factor_rows, summary_text):
-    overhead = result["software_overhead"]
-    annual = result["annual_total"]
-    return f"""<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <title>Rapport {PROJECT_NAME}</title>
-  <style>
-    body {{ font-family: Georgia, 'Times New Roman', serif; color: #17212b; margin: 38px; line-height: 1.45; }}
-    h1, h2, h3 {{ margin-bottom: 0.35em; }}
-    .meta {{ color: #5c6773; margin-bottom: 24px; }}
-    .box {{ border: 1px solid #d9d2c4; padding: 16px; margin: 18px 0; border-radius: 10px; }}
-    table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-    th, td {{ border-bottom: 1px solid #d9d2c4; padding: 8px 6px; text-align: left; vertical-align: top; }}
-    pre {{ white-space: pre-wrap; font-family: Consolas, monospace; font-size: 0.9rem; }}
-  </style>
-</head>
-<body>
-  <h1>{PROJECT_NAME} - Rapport d'évaluation environnementale</h1>
-  <p class="meta">Rapport généré automatiquement à partir d'une description libre interprétée par le modèle OpenAI configuré.</p>
-  <div class="box">
-    <h2>Résumé exécutif</h2>
-    <p>Energie annuelle totale: <strong>{annual['energy_wh']['low']:.1f} - {annual['energy_wh']['high']:.1f} Wh</strong></p>
-    <p>Carbone annuel total: <strong>{annual['carbon_gco2e']['low']:.1f} - {annual['carbon_gco2e']['high']:.1f} gCO2e</strong></p>
-    <p>Eau annuelle totale: <strong>{annual['water_ml']['low']:.1f} - {annual['water_ml']['high']:.1f} mL</strong></p>
-    <p>Incertitude: <strong>{escape(result['uncertainty_level'])}</strong></p>
-  </div>
-  <div class="box">
-    <h2>Description source</h2>
-    <p>{escape(description)}</p>
-  </div>
-  <div class="box">
-    <h2>Scénario interprété</h2>
-    <pre>{escape(json.dumps(parsed_payload, ensure_ascii=False, indent=2))}</pre>
-  </div>
-  <div class="box">
-    <h2>Méthode</h2>
-    <ol>
-      <li>Interprétation sémantique de la description libre par le modèle OpenAI configuré.</li>
-      <li>Sélection de facteurs comparables dans la littérature quantitative.</li>
-      <li>Ajustement par taille de prompt, intensité carbone et intensité eau.</li>
-      <li>Annualisation de la fonctionnalité et agrégation des postes logiciels.</li>
-    </ol>
-    <p>Mode: <strong>{escape((parser_meta or {}).get('mode', 'unknown'))}</strong> | Modèle: <strong>{escape((parser_meta or {}).get('model', 'unknown'))}</strong></p>
-    <ul>
-      {''.join(f'<li>{escape(item)}</li>' for item in result['assumptions'] + (parser_notes or []))}
-    </ul>
-  </div>
-  <div class="box">
-    <h2>Synthèse automatique</h2>
-    <p>{escape(summary_text)}</p>
-  </div>
-  <div class="box">
-    <h2>Bilan logiciel détaillé</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Poste</th>
-          <th>Description</th>
-          <th>Wh / usage</th>
-          <th>Wh / an</th>
-          <th>gCO2e / an</th>
-          <th>mL / an</th>
-        </tr>
-      </thead>
-      <tbody>
-        {''.join(render_component_row(row) for row in overhead['components'])}
-      </tbody>
-    </table>
-  </div>
-  <div class="box">
-    <h2>Sources mobilisées</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Facteur</th>
-          <th>Valeur</th>
-          <th>Source</th>
-          <th>Localisation</th>
-        </tr>
-      </thead>
-      <tbody>
-        {''.join(render_factor_row(row) for row in factor_rows)}
-      </tbody>
-    </table>
-  </div>
-</body>
-</html>"""
-
-
 class Handler(BaseHTTPRequestHandler):
-    def _write_html(self, html, status=200, attachment_name=None):
+    def _write_html(self, html, status=200):
         body = html.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
-        if attachment_name:
-            self.send_header("Content-Disposition", f'attachment; filename="{attachment_name}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -447,13 +310,8 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             description, parsed_payload, parser_notes, parser_meta, result, rows, summary_text = process_description(form)
-        except (OpenAIParserError, OpenAISummaryError) as exc:
+        except (OpenAIModerationError, OpenAIParserError, OpenAISummaryError) as exc:
             self._write_html(render_page(description=description, error_message=str(exc)), status=502)
-            return
-
-        if self.path == "/report":
-            report = render_report_document(description, parsed_payload, parser_notes, parser_meta, result, rows, summary_text)
-            self._write_html(report, attachment_name="ecotrace-llm-report.html")
             return
 
         self._write_html(
