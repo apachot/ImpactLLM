@@ -83,7 +83,7 @@ The initial release contains 49 records spanning 11 sources. All four analytical
 \begin{table}[htbp]
 \centering
 \small
-\begin{tabularx}{\textwidth}{|L{2.8cm}|L{1.9cm}|L{2.2cm}|Y|}
+\begin{tabularx}{\textwidth}{|L{2.7cm}|L{2.2cm}|L{2.1cm}|Y|}
 \hline
 Source & Phase & Example metric & Example value \\
 \hline
@@ -151,41 +151,50 @@ This design addresses a precise need: enabling an assistant or software tool to 
 \section{From Data to Estimation}
 One of the central use cases of the project is the following question: ``Here is my prompt with a given LLM. Can you estimate the associated environmental externalities?'' To make that question computationally tractable, the dataset must be complemented by comparability metadata and by a factor-selection logic.
 
-The current method follows four simple steps. First, the use case is classified into a relevant family, such as \emph{prompt-level inference} or \emph{query-level inference}. Second, the most appropriate factors are selected from the literature, prioritizing production measurements over report-level estimates. Third, these factors are adjusted to context when the user provides an electricity-mix carbon intensity or a water intensity. Fourth, the results are aggregated at the software-feature level and then over monthly or annual horizons.
+The current method follows four simple steps. First, the use case is classified into an inference family and associated with a model profile, either from the model catalog or from a user-provided estimate of active parameters. Second, the estimator retrieves anchor factors from the literature together with an extrapolation rule. Third, these anchor factors are projected toward the target model and then contextualized with country-level electricity carbon and water intensities when available. Fourth, the resulting per-request factors are annualized at the software-feature level.
 
-The project therefore implements an explicit distinction between observed and derived values. For example, 0.24 Wh/prompt reported by Google \cite{elsworth2025} remains an observed reference value. By contrast, converting that value into a carbon estimate contextualized to a French electricity mix is a derived value and should be labeled accordingly.
+The project therefore implements an explicit distinction between observed and derived values. For example, the page-level energy, carbon, and water values reported by Ren et al. \cite{ren2024} for Gemma-2B-it and Llama-3-70B remain observed anchor values. By contrast, the estimate produced for a target model such as GPT-4o-mini under a French electricity mix is a derived value obtained by parametric extrapolation and contextualization. The same distinction applies to country-level screening factors: they are not treated as model measurements, but as contextual conversion parameters applied after the model-level extrapolation.
 
 \subsection{Final Calculation Equations}
-Let $T_{in}$ and $T_{out}$ denote the input and output token counts for one LLM interaction, and let $T_{ref}=1550$ be the reference prompt size currently used by the implementation. The first adjustment is a token-scaling ratio:
+Let $P_t$ denote the active parameter count, in billions, of the target model to be estimated. Let $A$ be the set of anchor models available in the literature, currently Gemma-2B-it and Llama-3-70B from Ren et al. \cite{ren2024}. For each anchor model $a \in A$, let $P_a$ denote its active parameter count and let $x_{a,m}$ denote the published page-level factor for metric family $m \in \{\text{energy}, \text{carbon}, \text{water}\}$.
+
+Let $T_{in}$ and $T_{out}$ denote the input and output token counts for one LLM interaction, and let $T_{ref}=750$ be the reference token count associated with the Ren et al. page-level measurements. The first adjustment is a token-scaling ratio:
 \begin{equation}
-r_{tok}=\mathrm{clamp}\left(\frac{T_{in}+T_{out}}{T_{ref}}, 0.25, 4.0\right).
+r_{tok}=\mathrm{clamp}\left(\frac{T_{in}+T_{out}}{T_{ref}}, 0.25, 6.0\right).
 \end{equation}
 
-If $E_{prompt}$ is the literature-based energy factor in Wh per prompt and $n_{req}$ is the number of LLM requests considered in the scenario, the request-level energy estimate is:
+Let $n_{req}$ denote the number of LLM requests represented by the scenario. For each metric family $m$, the project stores a low, central, and high scaling exponent $\alpha_{m,s}$ with $s \in \{\text{low}, \text{central}, \text{high}\}$. In the current release, these exponents are derived from the contrast between Gemma-2B-it and Llama-3-70B in Ren et al. and are set to 1.18, 1.24, and 1.30 respectively. The anchor-specific extrapolation factor is:
 \begin{equation}
-E_{req}^{central}=E_{prompt}\times r_{tok}\times n_{req}.
+f_{a,m,s}=\left(\frac{P_t}{P_a}\right)^{\alpha_{m,s}} \times r_{tok} \times n_{req}.
 \end{equation}
-In the current implementation, the lower bound is set equal to this central value, while the upper bound uses a more conservative query-level factor $E_{query}^{high}$ from the literature:
+
+Because the anchor metrics do not share the same native units, a conversion coefficient $c_m$ is applied after extrapolation, with $c_{\text{energy}}=1000$ to convert kWh into Wh, $c_{\text{carbon}}=1$, and $c_{\text{water}}=1000$ to convert liters into milliliters. The extrapolated request-level value based on anchor $a$ is:
+\begin{equation}
+\hat{x}_{a,m,s}=x_{a,m}\times f_{a,m,s}\times c_m.
+\end{equation}
+
+The final request-level interval is then aggregated across anchors. Let $A_m \subseteq A$ denote the anchors available for metric family $m$. The implementation retains the most conservative lower and upper bounds, and uses the mean of central estimates as the midpoint:
 \begin{align}
-E_{req}^{low} &= E_{req}^{central},\\
-E_{req}^{high} &= E_{query}^{high}\times r_{tok}\times n_{req}.
+X_{m}^{low} &= \min_{a \in A_m} \hat{x}_{a,m,\text{low}},\\
+X_{m}^{central} &= \frac{1}{|A_m|}\sum_{a \in A_m}\hat{x}_{a,m,\text{central}},\\
+X_{m}^{high} &= \max_{a \in A_m} \hat{x}_{a,m,\text{high}}.
 \end{align}
 
-Carbon and water are then computed either from direct literature factors or from contextualized energy conversion. Let $CI$ be the electricity carbon intensity in gCO$_2$e/kWh and $WI$ the water intensity in L/kWh. The derived conversions are:
+Country contextualization is then applied when a country-level electricity mix is available. Let $CI$ be the electricity carbon intensity in gCO$_2$e/kWh and $WI$ the water intensity in L/kWh. Starting from the extrapolated energy estimate $X_{\text{energy}}$ in Wh, the contextualized conversions are:
 \begin{align}
-C(E) &= \frac{E}{1000}\times CI,\\
-W(E) &= \frac{E}{1000}\times WI \times 1000.
+C^{ctx}(E) &= \frac{E}{1000}\times CI,\\
+W^{ctx}(E) &= \frac{E}{1000}\times WI \times 1000.
 \end{align}
-The factor 1000 in the last equation converts liters into milliliters. In practice, the estimator preserves the published prompt-level carbon and water factors as observed anchors, then expands the range with the contextualized values:
+\noindent The final carbon and water intervals preserve the literature-based anchor range while allowing country-specific contextualization to widen the upper bound:
 \begin{align}
-C_{req}^{central} &= C\!\left(E_{req}^{central}\right),\\
-C_{req}^{low} &= \min\!\left(C_{lit},\, C\!\left(E_{req}^{central}\right)\right),\\
-C_{req}^{high} &= \max\!\left(C_{lit},\, C\!\left(E_{req}^{high}\right)\right),\\
-W_{req}^{central} &= \max\!\left(W_{lit},\, W\!\left(E_{req}^{central}\right)\right),\\
-W_{req}^{low} &= \min\!\left(W_{lit},\, W\!\left(E_{req}^{central}\right)\right),\\
-W_{req}^{high} &= \max\!\left(W_{lit},\, W\!\left(E_{req}^{high}\right)\right),
+C_{req}^{low} &= \min\!\left(X_{\text{carbon}}^{low},\, C^{ctx}\!\left(X_{\text{energy}}^{central}\right)\right),\\
+C_{req}^{central} &= C^{ctx}\!\left(X_{\text{energy}}^{central}\right),\\
+C_{req}^{high} &= \max\!\left(X_{\text{carbon}}^{high},\, C^{ctx}\!\left(X_{\text{energy}}^{high}\right)\right),\\
+W_{req}^{low} &= \min\!\left(X_{\text{water}}^{low},\, W^{ctx}\!\left(X_{\text{energy}}^{central}\right)\right),\\
+W_{req}^{central} &= W^{ctx}\!\left(X_{\text{energy}}^{central}\right),\\
+W_{req}^{high} &= \max\!\left(X_{\text{water}}^{high},\, W^{ctx}\!\left(X_{\text{energy}}^{high}\right)\right),
 \end{align}
-where $C_{lit}$ and $W_{lit}$ are the direct prompt-level carbon and water factors extracted from the literature.
+where $X_{\text{carbon}}$ and $X_{\text{water}}$ are the direct extrapolated literature ranges before country contextualization.
 
 At the software-feature level, let $n_f$ be the number of LLM requests per feature use, $u_m$ the monthly number of feature uses, and $m_y$ the number of months per year. Annualized feature uses and annualized LLM requests are:
 \begin{align}
@@ -194,24 +203,18 @@ N_{LLM,year} &= U_{year}\times n_f.
 \end{align}
 The annual direct LLM impact is obtained by scaling the per-request range:
 \begin{align}
-E_{LLM,year} &= E_{req}\times N_{LLM,year},\\
+E_{LLM,year} &= X_{\text{energy}}\times N_{LLM,year},\\
 C_{LLM,year} &= C_{req}\times N_{LLM,year},\\
 W_{LLM,year} &= W_{req}\times N_{LLM,year}.
 \end{align}
 
-Finally, let $s_i$ denote the software overhead in Wh per feature use for technical component $i$. The annual overhead of each component is:
+In the current web interface, the reported annual result is restricted to the LLM itself. The API and MCP still retain a wider feature-level structure that can include additional software components, but the present paper focuses on the direct LLM component:
 \begin{align}
-E_{i,year}^{soft} &= s_i \times U_{year},\\
-C_{i,year}^{soft} &= C\!\left(E_{i,year}^{soft}\right),\\
-W_{i,year}^{soft} &= W\!\left(E_{i,year}^{soft}\right),
+E_{total,year} &= E_{LLM,year},\\
+C_{total,year} &= C_{LLM,year},\\
+W_{total,year} &= W_{LLM,year}.
 \end{align}
-and the total annual software overhead is the sum over all components. The final annual result returned by the tool is therefore:
-\begin{align}
-E_{total,year} &= E_{LLM,year} + \sum_i E_{i,year}^{soft},\\
-C_{total,year} &= C_{LLM,year} + \sum_i C_{i,year}^{soft},\\
-W_{total,year} &= W_{LLM,year} + \sum_i W_{i,year}^{soft}.
-\end{align}
-These equations formalize the current implementation of the API and MCP estimator and clarify the distinction between source-backed factors and derived contextualized values.
+These equations formalize the current implementation of the API and MCP estimator and clarify the distinction between source-backed anchors, extrapolated model-level values, and country-contextualized derived values.
 
 \section{Research Questions}
 The transition from evidence base to operational estimation leads to four research questions:
@@ -223,11 +226,13 @@ The transition from evidence base to operational estimation leads to four resear
 \end{itemize}
 
 \section{Implementation Example: From Prompt to Software Feature}
-The current release includes a first-level estimator designed for screening use. For a standard text interaction, it first combines the most reusable inference factors in the corpus, notably 0.24 Wh/prompt, 0.03 gCO$_2$e/prompt, and 0.26 mL/prompt from production-scale measurements reported by Elsworth et al. \cite{elsworth2025}, together with the 2.9 Wh/query order of magnitude reported by EPRI \cite{epri2024} in order to construct a more conservative upper bound.
+The current release includes a first-level estimator designed for screening use. When the target model is present in the model catalog, or when the user provides an estimated active parameter count, the estimator prioritizes parametric extrapolation from the open anchor models documented by Ren et al. \cite{ren2024}. In the current release, the model catalog includes open anchor profiles such as Gemma-2B-it and Llama-3-70B, as well as approximate low-confidence screening profiles for otherwise undocumented closed models such as GPT-4o-mini.
 
-From these factors, the API and the MCP return a structured result including low, central, and high estimates, the selected factors, and the applied assumptions. For a demonstration scenario corresponding to a text interaction with 1\,200 input tokens and 350 output tokens under a simplified French electricity mix, the estimator returns 0.24 to 2.9 Wh per request, 0.0096 to 0.116 gCO$_2$e, and 0.096 to 1.16 mL of water.
+Consider a demonstration scenario corresponding to GPT-4o-mini, 1\,200 input tokens, 350 output tokens, one LLM request per feature use, and a French electricity mix. The target model is associated with an approximate active-parameter profile of 8B. The parameter ratio is therefore 4 relative to Gemma-2B-it and approximately 0.114 relative to Llama-3-70B. Combined with the token ratio $(1550/750)\approx 2.07$, these values yield anchor-specific extrapolated request factors, which are then aggregated into a low-central-high interval.
 
-The same engine can then be used at the software-feature level. For a conversational service used 10\,000 times per month over twelve months, with one LLM call per use and an additional software overhead of 0.15 Wh per use, the annualized estimate reaches 46\,800 to 366\,000 Wh, 1\,872 to 14\,640 gCO$_2$e, and 18\,720 to 146\,400 mL of water. The important point is not only the final figure, but the decomposition between direct LLM impact and software-system overhead.
+For this scenario, the API and the MCP return a structured result including the selected anchors, the scaling exponents, the model profile used for extrapolation, the country electricity mix used for contextualization, and the final low-central-high estimates. At request level, the current implementation returns 2.55 to 3.01 Wh, 0.110 to 2.255 gCO$_2$e, and 1.10 to 21.30 mL of water. The order of magnitude is thus no longer inherited from a generic prompt proxy alone, but reconstructed from explicit anchor points in the literature.
+
+The same engine can then be used at the software-feature level. For a conversational service used 10\,000 times per month over twelve months, with one LLM call per use, the annualized direct LLM estimate reaches approximately 306 to 361 kWh, 13.2 to 270.6 kgCO$_2$e, and 132 to 2\,556 L of water. The important point is not the exact point estimate, but the explicit chain linking anchor values, scaling factors, contextual intensities, and annualization.
 
 This implementation is deliberately conservative. It does not claim to provide an auditable environmental assessment in the sense of formal carbon accounting. Rather, it provides a traceable, reproducible, and extensible estimate that is useful for eco-design, use-case prioritization, and the later development of more robust methods for software environmental accounting.
 
@@ -252,7 +257,7 @@ Batch generation & 600\,000 uses/year & 410\,340--4\,426\,080 Wh & 16\,440--177\
 \label{tab:three-scenarios}
 \end{table}
 
-These results illustrate three properties of the method. First, moving from unit-level usage to annualized software features substantially changes the relevant order of magnitude for decision-making. Second, non-LLM software overhead is not negligible and should be tracked explicitly. Third, the spread between low and high bounds remains large, confirming that the tool should be used as a screening and relative-comparison instrument rather than as a definitive measurement device.
+These results illustrate three properties of the method. First, moving from unit-level usage to annualized software features substantially changes the relevant order of magnitude for decision-making. Second, the choice of target model profile and country mix has a material effect on the result even when the user-facing task remains the same. Third, the spread between low and high bounds remains large, confirming that the tool should be used as a screening and relative-comparison instrument rather than as a definitive measurement device.
 
 \section{Scientific Contribution}
 The main contribution is not algorithmic but infrastructural. The publication associated with the dataset transforms a literature review into a reusable evidence base. This changes the nature of the scientific deliverable in four ways.

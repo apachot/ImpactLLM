@@ -2,6 +2,7 @@
 import json
 import re
 import sys
+from functools import lru_cache
 from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -23,6 +24,7 @@ from core.openai_parser import (
 
 
 PROJECT_NAME = "EcoTrace LLM"
+BIB_PATH = ROOT.parent / "llm-environment-opendata-paper" / "references_llm_environment_opendata.bib"
 
 
 def normalize_model_label(value):
@@ -32,6 +34,124 @@ def normalize_model_label(value):
     for char in (" ", "-", "_", ".", ",", ":", ";", "/", "(", ")"):
         lowered = lowered.replace(char, "")
     return lowered
+
+
+def format_apa_hover(row):
+    apa_citation = format_apa_citation(row)
+    locator = str((row or {}).get("source_locator", "")).strip()
+    metric_name = str((row or {}).get("metric_name", "")).strip()
+    if not apa_citation:
+        return locator or metric_name
+    extras = [part for part in (metric_name, locator) if part]
+    if extras:
+        return f"{apa_citation}. {' | '.join(extras)}"
+    return apa_citation
+
+
+def format_apa_citation(row):
+    study_key = str((row or {}).get("study_key", "")).strip()
+    if study_key:
+        bib_entry = load_bibliography_index().get(study_key)
+        if bib_entry:
+            return format_bib_entry_apa(bib_entry)
+
+    citation = str((row or {}).get("citation", "")).strip()
+    if not citation:
+        return ""
+    return citation
+
+
+@lru_cache(maxsize=1)
+def load_bibliography_index():
+    if not BIB_PATH.exists():
+        return {}
+    content = BIB_PATH.read_text(encoding="utf-8")
+    entries = {}
+    for match in re.finditer(r"@(\w+)\{([^,]+),\s*(.*?)\n\}", content, re.DOTALL):
+        entry_type = match.group(1).strip().lower()
+        key = match.group(2).strip()
+        body = match.group(3)
+        fields = {}
+        for field_match in re.finditer(r"(\w+)\s*=\s*\{(.*?)\},?", body, re.DOTALL):
+            field_name = field_match.group(1).strip().lower()
+            field_value = " ".join(field_match.group(2).strip().split())
+            fields[field_name] = field_value
+        fields["entry_type"] = entry_type
+        entries[key] = fields
+    return entries
+
+
+def format_bib_author_list(author_field):
+    if not author_field:
+        return ""
+    authors = [part.strip().strip("{}") for part in author_field.split(" and ") if part.strip()]
+    formatted = []
+    for author in authors:
+        if "," in author:
+            last, first = [part.strip() for part in author.split(",", 1)]
+            initials = " ".join(f"{chunk[0]}." for chunk in re.split(r"[\s-]+", first) if chunk)
+            formatted.append(f"{last}, {initials}".strip())
+        else:
+            parts = author.split()
+            if len(parts) == 1:
+                formatted.append(parts[0])
+            else:
+                last = parts[-1]
+                first = " ".join(parts[:-1])
+                initials = " ".join(f"{chunk[0]}." for chunk in re.split(r"[\s-]+", first) if chunk)
+                formatted.append(f"{last}, {initials}".strip())
+    if len(formatted) == 1:
+        return formatted[0]
+    if len(formatted) == 2:
+        return f"{formatted[0]}, & {formatted[1]}"
+    return ", ".join(formatted[:-1]) + f", & {formatted[-1]}"
+
+
+def format_bib_entry_apa(entry):
+    authors = format_bib_author_list(entry.get("author", ""))
+    year = entry.get("year", "n.d.")
+    title = entry.get("title", "").replace("{", "").replace("}", "")
+    journal = entry.get("journal", "") or entry.get("booktitle", "") or entry.get("institution", "")
+    volume = entry.get("volume", "")
+    number = entry.get("number", "")
+    pages = entry.get("pages", "")
+    url = entry.get("url", "")
+
+    parts = []
+    if authors:
+        parts.append(f"{authors} ({year}).")
+    else:
+        parts.append(f"({year}).")
+    if title:
+        parts.append(f"{title}.")
+    if journal:
+        container = journal
+        if volume:
+            container += f", {volume}"
+            if number:
+                container += f"({number})"
+        elif number:
+            container += f", ({number})"
+        if pages:
+            container += f", {pages}"
+        container += "."
+        parts.append(container)
+    if url:
+        parts.append(url)
+    return " ".join(part for part in parts if part)
+
+
+def reference_anchor_id(row):
+    record_id = str((row or {}).get("record_id", "")).strip()
+    if not record_id:
+        return ""
+    return f"ref-{record_id}"
+
+
+def html_id_attr(value):
+    if not value:
+        return ""
+    return f' id="{escape(value, quote=True)}"'
 
 
 def classify_evidence_level(parsed_payload, factor_rows):
@@ -167,12 +287,10 @@ def matching_factor_rows(factor_rows, keywords):
 def render_source_refs(rows):
     refs = []
     for index, row in enumerate(rows, start=1):
-        title = escape(
-            f"{row.get('citation', '')} | {row.get('metric_name', '')} | {row.get('source_locator', '')}"
-        )
-        href = escape(row.get("source_url", "#"), quote=True)
+        title = escape(format_apa_hover(row))
+        href = f"#{reference_anchor_id(row)}" if reference_anchor_id(row) else "#"
         refs.append(
-            f'<a class="inline-ref" href="{href}" target="_blank" rel="noopener noreferrer" title="{title}">SRC{index}</a>'
+            f'<a class="inline-ref" href="{href}" title="{title}">[{index}]</a>'
         )
     return " ".join(refs)
 
@@ -180,9 +298,7 @@ def render_source_refs(rows):
 def render_sourced_value(value_text, rows):
     if not rows:
         return f"<code>{escape(value_text)}</code>"
-    title = " | ".join(
-        f"{row.get('citation', '')} - {row.get('metric_name', '')} - {row.get('source_locator', '')}" for row in rows
-    )
+    title = " ; ".join(format_apa_hover(row) for row in rows)
     return (
         f'<span class="sourced-value" title="{escape(title)}">'
         f'<code>{escape(value_text)}</code>'
@@ -212,12 +328,10 @@ def render_extrapolation_details(result, metric_label, source_rows):
         row = row_lookup.get(anchor.get("record_id"))
         citation_link = ""
         if row:
-            title = escape(
-                f"{row.get('citation', '')} | {row.get('metric_name', '')} | {row.get('source_locator', '')}"
-            )
-            href = escape(row.get("source_url", "#"), quote=True)
+            title = escape(format_apa_hover(row))
+            href = f"#{reference_anchor_id(row)}" if reference_anchor_id(row) else "#"
             citation_link = (
-                f' <a class="inline-ref" href="{href}" target="_blank" rel="noopener noreferrer" title="{title}">'
+                f' <a class="inline-ref" href="{href}" title="{title}">'
                 f'{escape(row.get("citation", "source"))}</a>'
             )
         formatted_source = f"{source_value} {source_unit}".strip()
@@ -383,6 +497,7 @@ def render_summary_html(summary_text, factor_rows):
     text = escape(summary_text or "")
     source_map = {}
     for index, row in enumerate(factor_rows or [], start=1):
+        source_map[str(index)] = row
         source_map[f"SRC{index}"] = row
 
     def replace_source_tag(match):
@@ -390,16 +505,15 @@ def render_summary_html(summary_text, factor_rows):
         row = source_map.get(tag)
         if not row:
             return f"[{escape(tag)}]"
-        title = escape(
-            f"{row.get('citation', '')} | {row.get('metric_name', '')} | {row.get('source_locator', '')}"
-        )
-        href = escape(row.get("source_url", "#"), quote=True)
+        title = escape(format_apa_hover(row))
+        href = f"#{reference_anchor_id(row)}" if reference_anchor_id(row) else "#"
+        display_tag = re.sub(r"^SRC", "", tag)
         return (
-            f'<a class="source-tag" href="{href}" target="_blank" rel="noopener noreferrer" '
-            f'title="{title}">[{escape(tag)}]</a>'
+            f'<a class="source-tag" href="{href}" '
+            f'title="{title}">[{escape(display_tag)}]</a>'
         )
 
-    html = re.sub(r"\[(SRC\d+)\]", replace_source_tag, text)
+    html = re.sub(r"\[(SRC\d+|\d+)\]", replace_source_tag, text)
     return html.replace("\n", "<br>")
 
 
@@ -411,6 +525,8 @@ def build_literature_catalog_rows():
             continue
         rows.append(
             {
+                "record_id": record.get("record_id", ""),
+                "study_key": record.get("study_key", ""),
                 "data_type": f"{record.get('phase', '')} / {record.get('metric_name', '')}",
                 "metric_value": f"{record.get('metric_value', '')} {record.get('metric_unit', '')}".strip(),
                 "citation": record.get("citation", ""),
@@ -425,6 +541,23 @@ def render_reference_catalog():
     rows = build_literature_catalog_rows()
     if not rows:
         return ""
+    rendered_rows = []
+    for row in rows:
+        locator_html = ""
+        if row["source_locator"]:
+            locator_html = f'<div class="reference-locator">{escape(row["source_locator"])}</div>'
+        row_id = reference_anchor_id(row)
+        rendered_rows.append(
+            f"<tr{html_id_attr(row_id)}>"
+            f"<td>{escape(row['data_type'])}</td>"
+            f"<td>{escape(row['metric_value'])}</td>"
+            f"<td>"
+            f"<a href=\"{escape(row['source_url'], quote=True)}\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"{escape(format_apa_hover(row))}\">{escape(format_apa_citation(row))}</a>"
+            f"{locator_html}"
+            f"</td>"
+            f"</tr>"
+        )
+    table_rows = "".join(rendered_rows)
 
     return f"""
     <section class="panel reference-panel">
@@ -446,14 +579,7 @@ def render_reference_catalog():
             </tr>
           </thead>
           <tbody>
-            {''.join(
-                f"<tr>"
-                f"<td>{escape(row['data_type'])}</td>"
-                f"<td>{escape(row['metric_value'])}</td>"
-                f"<td><a href=\"{escape(row['source_url'], quote=True)}\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"{escape(row['source_locator'])}\">{escape(row['citation'])}</a></td>"
-                f"</tr>"
-                for row in rows
-            )}
+            {table_rows}
           </tbody>
         </table>
       </div>
@@ -583,6 +709,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       color: var(--ink);
       background: var(--bg);
+      scroll-behavior: smooth;
     }}
     .wrap {{ max-width: 960px; margin: 0 auto; padding: 24px 16px 40px; }}
     .hero {{ margin-bottom: 16px; }}
@@ -788,6 +915,15 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     .reference-table tbody tr:last-child td {{
       border-bottom: 0;
     }}
+    .reference-table tbody tr:target td {{
+      background: #fff8db;
+    }}
+    .reference-locator {{
+      margin-top: 0.2rem;
+      color: var(--muted);
+      font-size: 0.83rem;
+      line-height: 1.45;
+    }}
     .source-tag {{
       display: inline-block;
       margin-left: 0.15rem;
@@ -903,8 +1039,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
   <main class="wrap">
     <header class="hero">
       <div class="eyebrow">Projet {PROJECT_NAME}</div>
-      <h1>Estimer l'impact environnemental d'une application utilisant des LLMs</h1>
-      <p class="subtitle">Décris ton application en langage naturel pour obtenir un resultat, sa demonstration mathematique et une synthese sourcée.</p>
+      <h1>Estimer l’empreinte environnementale d’une application utilisant des LLMs</h1>
+      <p class="subtitle">Décris ton application en langage naturel pour obtenir une estimation environnementale, son détail de calcul et une synthèse sourcée.</p>
     </header>
 
     <form class="panel" method="post" action="/" id="estimate-form">

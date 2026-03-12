@@ -266,14 +266,14 @@ def build_summary_messages(description, parsed_payload, result, factor_rows, par
         "Explain which values were retained, how the calculation was performed, and what the main limitations are. "
         "Be explicit about sources and assumptions. "
         "When you mention a quantified value or a specific factor from the literature, append one or more source tags "
-        "using the exact format [SRC1], [SRC2], etc. immediately after the relevant claim. "
+        "using the exact format [1], [2], etc. immediately after the relevant claim. "
         "Return plain French text only, no markdown title."
     )
     source_refs = []
     for index, row in enumerate(factor_rows, start=1):
         source_refs.append(
             {
-                "tag": f"SRC{index}",
+                "tag": f"[{index}]",
                 "citation": row.get("citation"),
                 "metric_name": row.get("metric_name"),
                 "metric_value": row.get("metric_value"),
