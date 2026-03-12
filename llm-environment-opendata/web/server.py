@@ -24,6 +24,69 @@ from core.openai_parser import (
 PROJECT_NAME = "EcoTrace LLM"
 
 
+def normalize_model_label(value):
+    if not value:
+        return ""
+    lowered = str(value).lower()
+    for char in (" ", "-", "_", ".", ",", ":", ";", "/", "(", ")"):
+        lowered = lowered.replace(char, "")
+    return lowered
+
+
+def classify_evidence_level(parsed_payload, factor_rows):
+    model_id = parsed_payload.get("model_id", "")
+    normalized_model = normalize_model_label(model_id)
+    if not normalized_model or normalized_model in {"unknown", "generic"}:
+        return {
+            "level": "proxy_scientifique",
+            "label": "Proxy scientifique",
+            "description": "L'estimation repose sur des facteurs de littérature applicables a une famille d'usages, sans mesure attribuable a un modele cible specifique.",
+        }
+
+    direct_match = False
+    family_match = False
+    provider = normalize_model_label(parsed_payload.get("provider", ""))
+    prefixes = tuple(part for part in normalized_model.split() if part)
+
+    for row in factor_rows:
+        haystack = normalize_model_label(
+            " ".join(
+                [
+                    row.get("metric_name", ""),
+                    row.get("citation", ""),
+                    row.get("source_locator", ""),
+                ]
+            )
+        )
+        if normalized_model and normalized_model in haystack:
+            direct_match = True
+            break
+        if provider and provider in haystack:
+            family_match = True
+        if normalized_model.startswith(("gpt", "gemini", "claude", "llama", "mistral", "qwen", "deepseek")):
+            family = "".join(ch for ch in normalized_model if not ch.isdigit())
+            if family and family in haystack:
+                family_match = True
+
+    if direct_match:
+        return {
+            "level": "mesure_directe",
+            "label": "Mesure directe",
+            "description": "Au moins un facteur selectionne correspond explicitement au modele mentionne dans la demande.",
+        }
+    if family_match:
+        return {
+            "level": "proxy_scientifique",
+            "label": "Proxy scientifique",
+            "description": "Les facteurs retenus sont proches de la famille de service ou du fournisseur mentionne, mais ne constituent pas une mesure directe du modele cible.",
+        }
+    return {
+        "level": "extrapolation",
+        "label": "Extrapolation",
+        "description": "Aucune mesure directe du modele cible n'est disponible dans le corpus mobilise; l'estimation est derivee de facteurs de reference et d'ajustements de contexte.",
+    }
+
+
 def format_scaled_value(value, unit_kind):
     value = 0.0 if value is None else float(value)
     abs_value = abs(value)
@@ -94,6 +157,7 @@ def process_description(form):
     records = load_records()
     result = estimate_feature_externalities(records, parsed_payload)
     rows = factor_details(records, result["selected_factors"])
+    parser_meta["evidence"] = classify_evidence_level(parsed_payload, rows)
     summary = generate_evaluation_summary(description, parsed_payload, result, rows, parser_meta)
     return description, parsed_payload, parser_notes, parser_meta, result, rows, summary
 
@@ -117,6 +181,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         <section class="panel result hero-card">
           <h2>Evaluation environnementale</h2>
           <p class="lead">EcoTrace LLM interprète le scénario d'usage, sélectionne les facteurs du corpus scientifique, puis calcule une estimation expliquée et traçable.</p>
+          <div class="evidence-callout">
+            <span class="evidence-label">Niveau de preuve</span>
+            <strong>{escape((parser_meta or {}).get('evidence', {}).get('label', 'Non qualifie'))}</strong>
+            <p>{escape((parser_meta or {}).get('evidence', {}).get('description', ''))}</p>
+          </div>
           <div class="metrics">
             <div class="metric"><span class="label">Energie annuelle totale</span><strong>{format_range_display(annual['energy_wh'], 'energy')}</strong></div>
             <div class="metric"><span class="label">Carbone annuel total</span><strong>{format_range_display(annual['carbon_gco2e'], 'carbon')}</strong></div>
@@ -299,6 +368,32 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 1rem;
       margin-top: 1rem;
+    }}
+    .evidence-callout {{
+      margin-top: 1rem;
+      padding: 0.9rem 1rem;
+      border: 1px solid rgba(13,110,253,0.18);
+      border-radius: 0.75rem;
+      background: var(--accent-soft);
+    }}
+    .evidence-label {{
+      display: block;
+      margin-bottom: 0.35rem;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      color: var(--accent);
+    }}
+    .evidence-callout strong {{
+      display: block;
+      font-size: 1rem;
+      margin-bottom: 0.25rem;
+    }}
+    .evidence-callout p {{
+      margin: 0;
+      color: #495057;
+      line-height: 1.5;
     }}
     .metric {{
       padding: 1rem;
