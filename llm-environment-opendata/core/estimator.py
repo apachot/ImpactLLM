@@ -185,6 +185,30 @@ def normalize_identifier(value):
     return normalized
 
 
+def parse_parameter_count_billion(value):
+    raw = str(value or "").strip()
+    if not raw or raw.lower() in {"n.d.", "nd", "na", "n/a"}:
+        return None
+    raw = raw.replace(",", ".")
+    active_match = None
+    if "active" in raw.lower():
+        active_match = raw.split("/")[0].strip()
+    token = active_match or raw
+    match = None
+    import re
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*([BM])", token, re.IGNORECASE)
+    if not match:
+        try:
+            return float(token)
+        except ValueError:
+            return None
+    value_num = float(match.group(1))
+    suffix = match.group(2).upper()
+    if suffix == "M":
+        return value_num / 1000.0
+    return value_num
+
+
 def get_model_profile(model_id=None, provider=None, estimated_active_parameters_billion=None):
     if estimated_active_parameters_billion not in (None, ""):
         return {
@@ -240,10 +264,39 @@ def get_market_model_profile(model_id):
     return None
 
 
+def get_market_provider_profile(provider):
+    normalized_provider = normalize_identifier(provider)
+    if not normalized_provider:
+        return None
+    candidates = []
+    for profile in load_market_models():
+        if normalize_identifier(profile.get("provider")) != normalized_provider:
+            continue
+        candidates.append(dict(profile))
+    if not candidates:
+        return None
+
+    def sort_key(profile):
+        market_status = str(profile.get("market_status", "")).strip().lower()
+        serving_mode = str(profile.get("serving_mode", "")).strip().lower()
+        if market_status == "api" or serving_mode == "closed":
+            return (0, profile.get("model_id", ""))
+        if market_status == "api_and_open_weight":
+            return (1, profile.get("model_id", ""))
+        return (2, profile.get("model_id", ""))
+
+    candidates.sort(key=sort_key)
+    provider_profile = candidates[0]
+    provider_profile["matching_strategy"] = "provider_market_family"
+    return provider_profile
+
+
 def resolve_inference_country_mix(payload):
     explicit_country = payload.get("country")
     explicit_mix = get_country_mix(explicit_country) if explicit_country else None
     market_profile = get_market_model_profile(payload.get("model_id"))
+    if not market_profile:
+        market_profile = get_market_provider_profile(payload.get("provider"))
     deployment_mode = normalize_identifier(payload.get("deployment_mode"))
 
     if not market_profile:
@@ -493,6 +546,23 @@ def format_raw_metric(value, unit):
     return f"{format_scalar(value)} {unit}".strip()
 
 
+def format_literature_metric(value, unit):
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return f"{value} {unit}".strip()
+
+    if numeric == 0:
+        return f"0 {unit}".strip()
+    if abs(numeric) < 0.001:
+        text = f"{numeric:.6f}".rstrip("0").rstrip(".")
+    elif abs(numeric) < 0.01:
+        text = f"{numeric:.5f}".rstrip("0").rstrip(".")
+    else:
+        text = f"{numeric:.3f}".rstrip("0").rstrip(".")
+    return f"{text} {unit}".strip()
+
+
 def aggregate_method_ranges(methods):
     if not methods:
         empty = rounded_range(0.0, 0.0, 0.0)
@@ -629,7 +699,7 @@ def build_energy_inference_anchors(records):
                 "source_energy_wh": energy_wh,
                 "metric_name": metric_name,
                 "metric_unit": unit,
-                "source_energy": format_raw_metric(record.get("metric_value"), unit),
+                "source_energy": format_literature_metric(record.get("metric_value"), unit),
             }
         )
     return anchors
@@ -670,6 +740,20 @@ def build_inference_method_set(records, payload):
     months_per_year = to_float(payload.get("months_per_year", 12.0), default=12.0)
     annual_feature_uses = feature_uses_per_month * months_per_year
     annual_requests = annual_feature_uses * requests_per_feature
+    total_tokens = input_tokens + output_tokens
+    reference_page_tokens = REFERENCE_PAGE_TOKENS
+    page_method_applicable = bool(payload.get("page_method_applicable", False))
+    parser_page_equivalent = to_float(payload.get("output_page_equivalents_per_request", 0.0), default=0.0)
+    if parser_page_equivalent > 0:
+        pages_per_request_equivalent = parser_page_equivalent
+        token_source_note = "parser_page_equivalent"
+    elif output_tokens > 0:
+        pages_per_request_equivalent = output_tokens / reference_page_tokens
+        token_source_note = "output_tokens"
+    else:
+        pages_per_request_equivalent = 0.0
+        token_source_note = "default_tokens"
+    annual_page_equivalents = annual_requests * pages_per_request_equivalent
     model_profile = get_model_profile(
         model_id=payload.get("model_id"),
         provider=payload.get("provider"),
@@ -687,7 +771,7 @@ def build_inference_method_set(records, payload):
     standard_request = {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
+        "total_tokens": total_tokens,
     }
 
     selected_factors = []
@@ -726,10 +810,18 @@ def build_inference_method_set(records, payload):
     if family_groups["prompt_query"]:
         assumptions.append("A prompt/query calibration is computed from the mean Wh per parameter observed in prompt/query inference records")
     if family_groups["page"]:
-        assumptions.append("A page calibration is computed from the mean Wh per parameter observed in page-generation inference records")
+        if page_method_applicable:
+            assumptions.append("A page calibration is computed from the mean Wh per parameter observed in page-generation inference records")
+            assumptions.append(
+                f"Page-family annualization uses generated page equivalents, with {reference_page_tokens:g} tokens per reference page when no explicit page count is provided"
+            )
+        else:
+            assumptions.append("Page-family method marked as not applicable for this scenario by the parser")
 
     for family_name, family_anchors in family_groups.items():
         if not family_anchors:
+            continue
+        if family_name == "page" and not page_method_applicable:
             continue
         selected_factors.extend([anchor["record_id"] for anchor in family_anchors])
         intensities = [anchor["source_energy_wh"] / anchor["source_params"] for anchor in family_anchors if anchor.get("source_params")]
@@ -739,6 +831,7 @@ def build_inference_method_set(records, payload):
         target_energy_wh = (mean_intensity * target_params) if target_params not in (None, 0) else sum(anchor["source_energy_wh"] for anchor in family_anchors) / len(family_anchors)
         target_carbon = wh_to_gco2e(target_energy_wh, grid_carbon_intensity) if grid_carbon_intensity is not None else 0.0
         target_water = wh_to_liters(target_energy_wh, water_intensity) * 1000.0 if water_intensity is not None else 0.0
+        annual_multiplier = annual_requests if family_name == "prompt_query" else annual_page_equivalents
         scaled_family_anchors = []
         for anchor in family_anchors:
             parameter_factor = (target_params / anchor["source_params"]) if (target_params not in (None, 0) and anchor.get("source_params") not in (None, 0)) else 1.0
@@ -761,9 +854,9 @@ def build_inference_method_set(records, payload):
                 "label": "Moyenne Wh/prompt|requête" if family_name == "prompt_query" else "Moyenne Wh/page",
                 "basis": "Moyenne des intensités énergétiques Wh/paramètre calibrées sur les ancrages prompt/requête." if family_name == "prompt_query" else "Moyenne des intensités énergétiques Wh/paramètre calibrées sur les ancrages page.",
                 "record_ids": [anchor["record_id"] for anchor in family_anchors],
-                "annual_energy_wh": scale_range(rounded_range(target_energy_wh, target_energy_wh, target_energy_wh), annual_requests),
-                "annual_carbon_gco2e": scale_range(rounded_range(target_carbon, target_carbon, target_carbon), annual_requests),
-                "annual_water_ml": scale_range(rounded_range(target_water, target_water, target_water), annual_requests),
+                "annual_energy_wh": scale_range(rounded_range(target_energy_wh, target_energy_wh, target_energy_wh), annual_multiplier),
+                "annual_carbon_gco2e": scale_range(rounded_range(target_carbon, target_carbon, target_carbon), annual_multiplier),
+                "annual_water_ml": scale_range(rounded_range(target_water, target_water, target_water), annual_multiplier),
                 "per_request_energy_wh": rounded_range(target_energy_wh, target_energy_wh, target_energy_wh),
                 "per_request_carbon_gco2e": rounded_range(target_carbon, target_carbon, target_carbon),
                 "per_request_water_ml": rounded_range(target_water, target_water, target_water),
@@ -779,6 +872,11 @@ def build_inference_method_set(records, payload):
                     "aggregation": "mean_wh_per_parameter",
                     "family": family_name,
                     "mean_intensity_wh_per_billion": mean_intensity,
+                    "reference_page_tokens": reference_page_tokens,
+                    "pages_per_request_equivalent": pages_per_request_equivalent,
+                    "annual_page_equivalents": annual_page_equivalents,
+                    "annual_multiplier": annual_multiplier,
+                    "token_source_note": token_source_note,
                 },
             }
         )
@@ -823,6 +921,8 @@ def build_inference_method_set(records, payload):
             "months_per_year": months_per_year,
             "annual_feature_uses": annual_feature_uses,
             "annual_llm_requests": annual_requests,
+            "pages_per_request_equivalent": pages_per_request_equivalent,
+            "annual_page_equivalents": annual_page_equivalents,
         },
         "per_request_llm": per_request_aggregate,
         "per_feature_llm": {
@@ -1038,6 +1138,8 @@ def build_market_model_predictions(records):
             "request_type": "chat_generation",
             "input_tokens": 1000.0,
             "output_tokens": 550.0,
+            "page_method_applicable": True,
+            "output_page_equivalents_per_request": 550.0 / REFERENCE_PAGE_TOKENS,
             "requests_per_feature": 1.0,
             "feature_uses_per_month": monthly_uses,
             "months_per_year": 12.0,
@@ -1069,6 +1171,97 @@ def build_market_model_predictions(records):
                 "selected_factors": estimate.get("selected_factors", []),
                 "assumptions": estimate.get("assumptions", []),
                 "method_results": estimate.get("method_results", []),
+            }
+        )
+    return predictions
+
+
+def normalize_training_metric_value(record):
+    metric_name = record.get("metric_name")
+    value = to_float(record.get("metric_value"), default=None)
+    unit = str(record.get("metric_unit", "")).strip().lower()
+    if value is None:
+        return None, None
+
+    if metric_name in {"training_emissions", "creation_lifecycle_emissions"}:
+        if "lb" in unit:
+            return value * 0.00045359237, "tCO2e"
+        if "tco2" in unit:
+            return value, "tCO2e"
+    if metric_name in {"creation_lifecycle_water", "training_water_total", "training_water_onsite"}:
+        if "million liters" in unit:
+            return value * 1000.0, "kL"
+        if unit == "l":
+            return value / 1000.0, "kL"
+        if "kl" in unit:
+            return value, "kL"
+    return None, None
+
+
+def build_training_prediction_anchors(records):
+    families = {
+        "direct_training_carbon": [],
+        "creation_lifecycle_carbon": [],
+        "creation_lifecycle_water": [],
+    }
+    for record in records:
+        metric_name = record.get("metric_name")
+        phase = record.get("phase")
+        if metric_name == "training_emissions" and phase == "training":
+            family = "direct_training_carbon"
+        elif metric_name == "creation_lifecycle_emissions" and phase == "lifecycle":
+            family = "creation_lifecycle_carbon"
+        elif metric_name == "creation_lifecycle_water" and phase == "lifecycle":
+            family = "creation_lifecycle_water"
+        else:
+            continue
+
+        source_params = parse_parameter_count_billion(record.get("model_parameters_normalized"))
+        if source_params in (None, 0):
+            continue
+        normalized_value, normalized_unit = normalize_training_metric_value(record)
+        if normalized_value is None:
+            continue
+        families[family].append(
+            {
+                "record_id": record.get("record_id"),
+                "source_model": record.get("llm_normalized") or record.get("model_or_scope"),
+                "source_params": source_params,
+                "source_country": record.get("country_normalized") or "Non spécifié",
+                "source_value": normalized_value,
+                "source_unit": normalized_unit,
+            }
+        )
+    return families
+
+
+def build_training_market_predictions(records):
+    anchors_by_family = build_training_prediction_anchors(records)
+    predictions = []
+    for row in load_market_models():
+        target_params = to_float(row.get("active_parameters_billion"), default=None)
+        family_results = {}
+        selected_factors = []
+        for family_name, anchors in anchors_by_family.items():
+            if not anchors or target_params in (None, 0):
+                continue
+            intensities = [anchor["source_value"] / anchor["source_params"] for anchor in anchors if anchor.get("source_params")]
+            if not intensities:
+                continue
+            mean_intensity = sum(intensities) / len(intensities)
+            estimated_value = mean_intensity * target_params
+            family_results[family_name] = {
+                "value": estimated_value,
+                "unit": "tCO2e" if "carbon" in family_name else "kL",
+                "anchors": anchors,
+                "mean_intensity_per_billion": mean_intensity,
+            }
+            selected_factors.extend(anchor["record_id"] for anchor in anchors)
+        predictions.append(
+            {
+                **row,
+                "training_results_by_id": family_results,
+                "selected_training_factors": dedupe(selected_factors),
             }
         )
     return predictions

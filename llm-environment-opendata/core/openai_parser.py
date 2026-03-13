@@ -64,6 +64,8 @@ def parse_application_description_with_openai(text):
         "request_type": parsed.get("request_type", "chat_generation"),
         "input_tokens": to_float(parsed.get("input_tokens"), 1200.0),
         "output_tokens": to_float(parsed.get("output_tokens"), 350.0),
+        "page_method_applicable": bool(parsed.get("page_method_applicable", False)),
+        "output_page_equivalents_per_request": to_float(parsed.get("output_page_equivalents_per_request"), 0.0),
         "requests_per_feature": to_float(parsed.get("requests_per_feature"), 1.0),
         "feature_uses_per_month": to_float(parsed.get("feature_uses_per_month"), 1000.0),
         "months_per_year": to_float(parsed.get("months_per_year"), 12.0),
@@ -190,6 +192,8 @@ def build_messages(text):
         "request_type": "chat_generation/text_summarization/batch_generation/code_assistance",
         "input_tokens": 1200,
         "output_tokens": 350,
+        "page_method_applicable": False,
+        "output_page_equivalents_per_request": 0.2,
         "requests_per_feature": 1,
         "feature_uses_per_month": 1000,
         "months_per_year": 12,
@@ -212,6 +216,8 @@ def build_messages(text):
         "Read a natural-language application description and output only valid JSON. "
         "Infer a realistic feature-level annualized scenario. "
         "If the user omits a value, insert a conservative default and explain it in parser_notes. "
+        "Estimate whether the page-based method is relevant. Set page_method_applicable to true only when the scenario plausibly generates or transforms document-like outputs that can be expressed in 500-word pages. "
+        "Estimate output_page_equivalents_per_request as the number of generated 500-word pages per LLM request. For support chat, assistant, or short-answer scenarios, this value should usually be well below 1. "
         "Always provide a non-empty software_components list. "
         "Return numeric values as numbers, not strings. "
         "Do not output markdown or prose outside JSON."
