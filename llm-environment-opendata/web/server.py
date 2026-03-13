@@ -289,6 +289,16 @@ def format_range_display(range_obj, unit_kind):
     return f"{low_value} - {high_value} {unit}"
 
 
+def format_result_card_display(range_obj, unit_kind):
+    if not range_obj:
+        return "n.d."
+    low = float(range_obj.get("low", 0.0) or 0.0)
+    high = float(range_obj.get("high", 0.0) or 0.0)
+    if abs(low - high) < 1e-12:
+        return format_value_display(range_obj.get("central", low), unit_kind)
+    return format_range_display(range_obj, unit_kind)
+
+
 def format_central_display(range_obj, unit_kind):
     if not range_obj:
         return "n.d."
@@ -734,9 +744,9 @@ def build_method_comparisons(records, parsed_payload, result):
             {
                 "label": method.get("label", "Méthode"),
                 "basis": method.get("basis", ""),
-                "energy": format_range_display(method["annual_energy_wh"], "energy"),
-                "carbon": format_range_display(method["annual_carbon_gco2e"], "carbon"),
-                "water": format_range_display(method["annual_water_ml"], "water"),
+                "energy": format_result_card_display(method["annual_energy_wh"], "energy"),
+                "carbon": format_result_card_display(method["annual_carbon_gco2e"], "carbon"),
+                "water": format_result_card_display(method["annual_water_ml"], "water"),
                 "refs": render_source_refs(rows),
                 "annual_requests": annual_requests,
                 "annual_feature_uses": annual_feature_uses,
@@ -758,7 +768,6 @@ def build_method_comparisons(records, parsed_payload, result):
 def render_method_comparisons(methods):
     if not methods:
         return ""
-    modal_blocks = []
     cards = "".join(
         f"""
         <article class="result-method-card">
@@ -784,45 +793,41 @@ def render_method_comparisons(methods):
               <strong>{escape(method['water'])}</strong>
             </div>
           </div>
-          <div class="result-method-actions">
-            <button type="button" class="method-detail-button" data-modal-open="method-modal-{index}">Voir le détail du calcul</button>
-          </div>
         </article>
         """
-        for index, method in enumerate(methods, start=1)
+        for method in methods
     )
-    for index, method in enumerate(methods, start=1):
-        modal_blocks.append(
-            f"""
-            <dialog class="method-modal" id="method-modal-{index}">
-              <div class="method-modal-card">
-                <div class="summary-header">
-                  <div>
-                    <div class="summary-kicker">Démonstration</div>
-                    <h3>{escape(method['label'])}</h3>
-                  </div>
-                  <button type="button" class="modal-close-button" data-modal-close="method-modal-{index}">Fermer</button>
-                </div>
-                <p class="summary-intro">{escape(method['basis'])}</p>
-                {build_method_modal_body(method)}
-              </div>
-            </dialog>
-            """
-        )
     return f"""
     <div class="method-panel">
-      <div class="summary-header">
-        <div>
-          <div class="summary-kicker">Résultats</div>
-          <h3>Résultats de l'estimation</h3>
-        </div>
-        <div class="summary-badge">{len(methods)} méthode(s)</div>
-      </div>
-      <p class="summary-intro">Chaque carte ci-dessous correspond à une méthode de calcul distincte appliquée à ta demande. Les valeurs affichées sont les résultats annualisés retournés par le moteur, avec leurs références et un accès direct à la démonstration mathématique.</p>
       <div class="result-method-grid">
         {cards}
       </div>
-      {''.join(modal_blocks)}
+    </div>
+    """
+
+
+def render_method_calculation_details(methods):
+    if not methods:
+        return ""
+    blocks = "".join(
+        f"""
+        <article class="result-method-detail-card">
+          <div class="summary-header">
+            <div>
+              <div class="summary-kicker">Détail du calcul</div>
+              <h3>{escape(method['label'])}</h3>
+            </div>
+            <div class="result-method-refs">{method['refs']}</div>
+          </div>
+          <p class="summary-intro">{escape(method['basis'])}</p>
+          {build_method_modal_body(method)}
+        </article>
+        """
+        for method in methods
+    )
+    return f"""
+    <div class="method-panel">
+      {blocks}
     </div>
     """
 
@@ -1352,6 +1357,10 @@ def render_how_it_works_tab(records):
           \\qquad
           Impact_{{year}} = Impact_{{unitaire}} \\times N_{{year}}
           \\]</p>
+          <p><strong>Définition des variables.</strong></p>
+          <p>\\(A_f\\) désigne l'ensemble des ancrages de littérature disponibles pour la famille d'unités \\(f\\). \\(E_a\\) est la valeur énergétique observée pour l'ancrage \\(a\\), convertie en Wh dans son unité native. \\(P_a\\) est le nombre de paramètres du modèle source de l'ancrage, exprimé en milliards. \\(I_f\\) est l'intensité énergétique moyenne par milliard de paramètres pour la famille \\(f\\).</p>
+          <p>\\(P_t\\) désigne le nombre de paramètres du modèle cible. \\(E_{{t,f}}\\) est l'énergie estimée pour ce modèle cible dans la famille \\(f\\). \\(CI_c\\) est l'intensité carbone de l'électricité du pays \\(c\\), exprimée en gCO2e/kWh. \\(WI_c\\) est l'intensité hydrique de l'électricité du pays \\(c\\), exprimée en L/kWh.</p>
+          <p>\\(N_{{year}}\\) est le nombre annuel d'unités d'inférence retenues pour le scénario. \\(Impact_{{unitaire}}\\) est la valeur énergétique, carbone ou eau associée à une unité d'inférence. \\(Impact_{{year}}\\) est la projection annuelle obtenue après multiplication par le volume d'usage.</p>
         </div>
         <p class="summary-intro">Les deux familles <code>Wh/prompt|requête</code> et <code>Wh/page</code> restent affichées séparément. Le projet ne fusionne pas ces deux mesures en une pseudo-valeur unique, car le corpus ne contient pas encore de conversion empirique robuste entre elles pour un même modèle.</p>
       </section>
@@ -1517,9 +1526,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     training_models_block = render_training_models_table(all_records)
     how_it_works_tab = render_how_it_works_tab(all_records)
     result_block = ""
+    result_methods_block = ""
     if result:
         annual = result["annual_llm"]
         method_comparisons = build_method_comparisons(load_records(), parsed_payload, result)
+        result_methods_block = render_method_comparisons(method_comparisons)
         evidence = (parser_meta or {}).get("evidence", {})
         method_label = {
             "parametric_extrapolation": "Extrapolation parametrique",
@@ -1545,7 +1556,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <p class="meta-inline">Modele de reference: <strong>{escape(model_profile.get('model_id', parsed_payload.get('model_id', 'non specifie')))}</strong>{' | Parametres actifs approx.: <strong>' + escape(model_profile.get('active_parameters_billion', '')) + 'B</strong>' if model_profile.get('active_parameters_billion') else ''}</p>
           <p class="meta-inline">Mix electrique: <strong>{escape(country_mix.get('country_code', parsed_payload.get('country', 'non specifie')))}</strong> <span class="method-basis">({escape(country_resolution_label)})</span>{' | ' + escape(country_mix.get('grid_carbon_intensity_gco2_per_kwh', '')) + ' gCO2e/kWh' if country_mix.get('grid_carbon_intensity_gco2_per_kwh') else ''}</p>
           {render_assumptions_summary(result)}
-          {render_method_comparisons(method_comparisons)}
+          {render_method_calculation_details(method_comparisons)}
         </section>
         """
 
@@ -1565,6 +1576,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <span class="loading-text">Evaluation en cours...</span>
         </button>
       </form>
+      {result_methods_block}
       {error_block}
       {result_block}
       <section class="panel reference-panel">
@@ -1851,6 +1863,26 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }}
     .result-method-actions {{
       margin-top: 0.9rem;
+    }}
+    .result-method-detail {{
+      margin-top: 0.95rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--line);
+    }}
+    .result-method-detail-card {{
+      border: 1px solid var(--line);
+      border-radius: 0.8rem;
+      background: #fff;
+      padding: 1rem;
+      box-shadow: 0 0.25rem 0.7rem rgba(0, 0, 0, 0.04);
+    }}
+    .result-method-detail-card + .result-method-detail-card {{
+      margin-top: 0.9rem;
+    }}
+    .result-method-detail .method-modal-section + .method-modal-section {{
+      margin-top: 0.85rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--line);
     }}
     .method-basis {{
       margin-top: 0.25rem;
@@ -2225,8 +2257,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const submitButton = document.getElementById('submit-button');
     const tabButtons = Array.from(document.querySelectorAll('[data-tab-target]'));
     const tabPanels = Array.from(document.querySelectorAll('[data-tab-panel]'));
-    const modalOpenButtons = Array.from(document.querySelectorAll('[data-modal-open]'));
-    const modalCloseButtons = Array.from(document.querySelectorAll('[data-modal-close]'));
     const searchInputs = Array.from(document.querySelectorAll('[data-table-search]'));
     const sortButtons = Array.from(document.querySelectorAll('[data-sort-table]'));
     if (estimateForm && submitButton) {{
@@ -2242,31 +2272,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         tabPanels.forEach((panel) => {{
           panel.classList.toggle('is-active', panel.getAttribute('data-tab-panel') === target);
         }});
-      }});
-    }});
-    modalOpenButtons.forEach((button) => {{
-      button.addEventListener('click', function () {{
-        const modalId = button.getAttribute('data-modal-open');
-        const modal = document.getElementById(modalId);
-        if (modal && typeof modal.showModal === 'function') {{
-          modal.showModal();
-        }}
-      }});
-    }});
-    modalCloseButtons.forEach((button) => {{
-      button.addEventListener('click', function () {{
-        const modalId = button.getAttribute('data-modal-close');
-        const modal = document.getElementById(modalId);
-        if (modal && typeof modal.close === 'function') {{
-          modal.close();
-        }}
-      }});
-    }});
-    document.querySelectorAll('.method-modal').forEach((modal) => {{
-      modal.addEventListener('click', function (event) {{
-        if (event.target === modal) {{
-          modal.close();
-        }}
       }});
     }});
     searchInputs.forEach((input) => {{
