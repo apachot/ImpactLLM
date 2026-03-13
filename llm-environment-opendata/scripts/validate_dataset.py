@@ -24,6 +24,9 @@ REQUIRED_FIELDS = [
     "data_type",
     "source_locator",
     "source_url",
+    "llm_normalized",
+    "model_parameters_normalized",
+    "country_normalized",
 ]
 
 

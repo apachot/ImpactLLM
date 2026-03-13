@@ -36,7 +36,12 @@
     },
     "phase": {
       "type": "string",
-      "enum": ["training", "inference", "infrastructure", "lifecycle"]
+      "enum": [
+        "training",
+        "inference",
+        "infrastructure",
+        "lifecycle"
+      ]
     },
     "impact_category": {
       "type": "string"
@@ -64,7 +69,14 @@
     },
     "data_type": {
       "type": "string",
-      "enum": ["measured", "calculated", "modeled", "projected", "estimated", "statistical"]
+      "enum": [
+        "measured",
+        "calculated",
+        "modeled",
+        "projected",
+        "estimated",
+        "statistical"
+      ]
     },
     "source_locator": {
       "type": "string"
@@ -80,16 +92,32 @@
     },
     "uncertainty_level": {
       "type": "string",
-      "enum": ["low", "medium", "high"]
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
     },
     "raw_or_derived": {
       "type": "string",
-      "enum": ["raw", "derived"]
+      "enum": [
+        "raw",
+        "derived"
+      ]
     },
     "applicability_domain": {
       "type": "object"
     },
     "notes": {
+      "type": "string"
+    },
+    "llm_normalized": {
+      "type": "string"
+    },
+    "model_parameters_normalized": {
+      "type": "string"
+    },
+    "country_normalized": {
       "type": "string"
     }
   },
