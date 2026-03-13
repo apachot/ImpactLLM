@@ -14,6 +14,15 @@ MARKET_MODELS_PATH = ROOT / "data" / "market_models.csv"
 REFERENCE_PROMPT_TOKENS = 1550.0
 REFERENCE_PAGE_TOKENS = 750.0
 MARKET_REFERENCE_REQUESTS_PER_YEAR = 1_000_000.0
+MARKET_REFERENCE_INPUT_TOKENS = 1000.0
+MARKET_REFERENCE_OUTPUT_TOKENS = 550.0
+MARKET_REFERENCE_READING_WORDS_PER_MINUTE = 238.0
+MARKET_REFERENCE_WORDS_PER_TOKEN = 0.75
+MARKET_REFERENCE_REQUESTS_PER_HOUR = round(
+    (MARKET_REFERENCE_READING_WORDS_PER_MINUTE * 60.0)
+    / (MARKET_REFERENCE_OUTPUT_TOKENS * MARKET_REFERENCE_WORDS_PER_TOKEN),
+    1,
+)
 
 
 def load_records():
@@ -1128,7 +1137,6 @@ def predict_inference_externalities(records, payload):
 
 def build_market_model_predictions(records):
     predictions = []
-    monthly_uses = MARKET_REFERENCE_REQUESTS_PER_YEAR / 12.0
     for row in load_market_models():
         active_parameters = to_float(row.get("active_parameters_billion"), default=None)
         payload = {
@@ -1136,13 +1144,13 @@ def build_market_model_predictions(records):
             "provider": row.get("provider"),
             "model_id": row.get("model_id"),
             "request_type": "chat_generation",
-            "input_tokens": 1000.0,
-            "output_tokens": 550.0,
+            "input_tokens": MARKET_REFERENCE_INPUT_TOKENS,
+            "output_tokens": MARKET_REFERENCE_OUTPUT_TOKENS,
             "page_method_applicable": True,
-            "output_page_equivalents_per_request": 550.0 / REFERENCE_PAGE_TOKENS,
+            "output_page_equivalents_per_request": MARKET_REFERENCE_OUTPUT_TOKENS / REFERENCE_PAGE_TOKENS,
             "requests_per_feature": 1.0,
-            "feature_uses_per_month": monthly_uses,
-            "months_per_year": 12.0,
+            "feature_uses_per_month": MARKET_REFERENCE_REQUESTS_PER_HOUR,
+            "months_per_year": 1.0,
             "country": row.get("estimation_country_code") or "US",
         }
         if active_parameters is not None:
@@ -1153,9 +1161,11 @@ def build_market_model_predictions(records):
                 **row,
                 "standard_scenario": {
                     "request_type": "chat_generation",
-                    "input_tokens": 1000.0,
-                    "output_tokens": 550.0,
-                    "requests_per_year": MARKET_REFERENCE_REQUESTS_PER_YEAR,
+                    "input_tokens": MARKET_REFERENCE_INPUT_TOKENS,
+                    "output_tokens": MARKET_REFERENCE_OUTPUT_TOKENS,
+                    "requests_per_hour": MARKET_REFERENCE_REQUESTS_PER_HOUR,
+                    "reading_words_per_minute": MARKET_REFERENCE_READING_WORDS_PER_MINUTE,
+                    "words_per_token": MARKET_REFERENCE_WORDS_PER_TOKEN,
                 },
                 "estimate_status": "estimated",
                 "estimate_method": estimate.get("method"),

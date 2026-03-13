@@ -396,6 +396,18 @@ def render_source_refs(rows):
     return " ".join(refs)
 
 
+def render_single_source_ref(row):
+    if not row:
+        return ""
+    number_map = build_reference_number_map()
+    ref_number = number_map.get(str(row.get("record_id", "")).strip())
+    if not ref_number:
+        return ""
+    title = escape(format_apa_hover(row))
+    href = f"#{reference_anchor_id(row)}" if reference_anchor_id(row) else "#"
+    return f'<a class="inline-ref" href="{href}" title="{title}">[{ref_number}]</a>'
+
+
 def render_sourced_value(value_text, rows):
     if not rows:
         return f"<code>{escape(value_text)}</code>"
@@ -590,6 +602,8 @@ def build_method_modal_body(method):
     target_carbon = method.get("target_grid_carbon_intensity")
     target_water = method.get("target_water_intensity")
     detail = method.get("detail", {})
+    factor_rows = method.get("factor_rows") or []
+    row_by_id = {row.get("record_id"): row for row in factor_rows}
     sections = []
 
     if detail.get("kind") == "wh_parameter_model":
@@ -601,51 +615,65 @@ def build_method_modal_body(method):
         token_source_note = detail.get("token_source_note")
         annual_multiplier = detail.get("annual_multiplier", annual_requests)
         annualization_sentence = (
-            f"<p><code>{format_count(feature_uses_per_month)}</code> usages/mois × <code>{format_scalar(months_per_year, 0)}</code> mois × "
-            f"<code>{format_scalar(requests_per_feature, 0)}</code> appel(s) LLM/usage = <code>{format_count(annual_requests)}</code> appels LLM/an</p>"
+            f"<p>Le volume annuel d'appels est calculé par :</p>"
+            f"<p>\\["
+            f"N_{{appels/an}} = {format_count(feature_uses_per_month)} \\times {format_scalar(months_per_year, 0)} \\times {format_scalar(requests_per_feature, 0)} = {format_count(annual_requests)}"
+            f"\\]</p>"
         )
         if family == "page":
-            source_note = "issus de la description utilisateur" if token_source_note == "user_tokens" else "valeur par défaut du projet"
+            source_note = "issus de la description utilisateur" if token_source_note in {"user_tokens", "parser_page_equivalent", "output_tokens"} else "valeur par défaut du projet"
             annualization_sentence += (
-                f"<p>Conversion en pages équivalentes: <code>{format_scalar(standard_request.get('total_tokens', 0), 0)}</code> tokens/requête ÷ "
-                f"<code>{format_scalar(reference_page_tokens, 0)}</code> tokens/page = <code>{format_scalar(pages_per_request_equivalent, 3)}</code> page(s) équivalente(s)/requête ({source_note}).</p>"
-                f"<p><code>{format_count(annual_requests)}</code> appels/an × <code>{format_scalar(pages_per_request_equivalent, 3)}</code> page(s) équivalente(s)/appel = "
-                f"<code>{format_count(annual_page_equivalents)}</code> pages équivalentes/an</p>"
+                f"<p>Pour la famille <code>Wh/page</code>, le moteur convertit ensuite les sorties en pages équivalentes :</p>"
+                f"<p>\\["
+                f"P_{{eq/appel}} = \\frac{{{format_scalar(standard_request.get('output_tokens', 0), 0)}}}{{{format_scalar(reference_page_tokens, 0)}}} = {format_scalar(pages_per_request_equivalent, 3)}"
+                f"\\]</p>"
+                f"<p>Cette conversion repose sur {source_note}.</p>"
+                f"<p>\\["
+                f"P_{{eq/an}} = {format_count(annual_requests)} \\times {format_scalar(pages_per_request_equivalent, 3)} = {format_count(annual_page_equivalents)}"
+                f"\\]</p>"
             )
         else:
             annualization_sentence += (
-                "<p>Dans la famille prompt|requête, une requête LLM est assimilée à une unité d'inférence. "
-                "L'annualisation repose donc directement sur le nombre d'appels LLM/an.</p>"
+                "<p>Dans la famille <code>Wh/prompt|requête</code>, une requête LLM correspond directement à une unité d'inférence. "
+                "L'annualisation repose donc sur le nombre d'appels LLM par an.</p>"
             )
         sections.append(
             f"""
             <div class="method-modal-section">
-              <div class="math-label">1. Requête standardisée et annualisation</div>
-              <p>La requête standardisée retenue pour ce scénario est décrite par <code>{format_scalar(standard_request.get('input_tokens', 0), 0)}</code> tokens en entrée et <code>{format_scalar(standard_request.get('output_tokens', 0), 0)}</code> tokens en sortie.</p>
+              <div class="math-label">1. Données d'entrée du scénario</div>
+              <p>Le scénario interprété retient <code>{format_scalar(standard_request.get('input_tokens', 0), 0)}</code> tokens en entrée et <code>{format_scalar(standard_request.get('output_tokens', 0), 0)}</code> tokens en sortie par appel.</p>
               {annualization_sentence}
             </div>
             """
         )
         anchor_lines = []
         for anchor in detail.get("anchors", []):
+            row = row_by_id.get(anchor.get("record_id"))
+            ref = render_single_source_ref(row)
             anchor_lines.append(
                 f"""
                 <li>
-                  <strong>{escape(anchor.get('source_model', 'source'))}</strong> :
-                  énergie observée <code>{escape(anchor.get('source_energy', 'n.d.'))}</code>,
-                  paramètres source <code>{format_scalar(anchor.get('source_params'))}B</code>,
-                  paramètres cible <code>{format_scalar(anchor.get('target_params'))}B</code>,
-                  facteur paramétrique <code>{format_scalar(anchor.get('parameter_factor'))}</code>,
-                  énergie extrapolée <code>{escape(format_range_display(anchor.get('per_request_energy', {'low':0,'high':0}), 'energy'))}</code>.
+                  <p><strong>{escape(anchor.get('source_model', 'source'))}</strong> {ref}</p>
+                  <p>Valeur observée dans la littérature : <code>{escape(anchor.get('source_energy', 'n.d.'))}</code> {ref}</p>
+                  <p>Nombre de paramètres source : <code>{format_scalar(anchor.get('source_params'))}B</code>. Nombre de paramètres cible : <code>{format_scalar(anchor.get('target_params'))}B</code>.</p>
+                  <p>Facteur paramétrique appliqué :</p>
+                  <p>\\[
+                  r_P = \\frac{{P_t}}{{P_s}} = \\frac{{{format_scalar(anchor.get('target_params'))}}}{{{format_scalar(anchor.get('source_params'))}}} = {format_scalar(anchor.get('parameter_factor'), 4)}
+                  \\]</p>
+                  <p>Énergie extrapolée pour une unité d'inférence :</p>
+                  <p>\\[
+                  E_t = E_s \\times r_P = {escape(anchor.get('source_energy', 'n.d.'))} \\times {format_scalar(anchor.get('parameter_factor'), 4)} = {escape(format_range_display(anchor.get('per_request_energy', {'low':0,'high':0}), 'energy'))}
+                  \\]</p>
                 </li>
                 """
             )
         sections.append(
             f"""
             <div class="method-modal-section">
-              <div class="math-label">2. Calibration énergétique</div>
-              <p>Les ancrages énergétiques les plus proches en nombre de paramètres sont sélectionnés dans la littérature, puis mis à l'échelle sur le modèle cible.</p>
+              <div class="math-label">2. Ancrages de littérature et extrapolation</div>
+              <p>La méthode part des valeurs énergétiques publiées dans la littérature pour la famille <code>{escape(detail.get('unit_basis', 'Wh'))}</code>, puis applique une mise à l'échelle par le nombre de paramètres.</p>
               <ul class="extrapolation-list">{''.join(anchor_lines) or '<li>n.d.</li>'}</ul>
+              <p>Lorsque plusieurs ancrages existent dans la même famille, le moteur calcule ensuite une moyenne des intensités énergétiques par milliard de paramètres pour obtenir la valeur centrale affichée dans le bloc résultat.</p>
             </div>
             """
         )
@@ -653,10 +681,21 @@ def build_method_modal_body(method):
             f"""
             <div class="method-modal-section">
               <div class="math-label">3. Dérivation CO2 et eau à partir du mix pays</div>
-              <p>Énergie par requête retenue : <code>{escape(method['energy'])}</code>.</p>
-              <p>Carbone: <code>Wh × {format_scalar(target_carbon)} gCO2e/kWh / 1000</code> appliqué à <strong>{escape(target_country)}</strong> = <code>{escape(method['carbon'])}</code>.</p>
-              <p>Eau: <code>Wh × {format_scalar(target_water)} L/kWh / 1000</code> appliqué à <strong>{escape(target_country)}</strong> = <code>{escape(method['water'])}</code>.</p>
-              <p>Annualisation finale retenue pour cette méthode : <code>{format_count(annual_multiplier)}</code> unité(s) d'inférence par an.</p>
+              <p>Le carbone et l'eau ne sont pas repris tels quels depuis la littérature. Ils sont dérivés de l'énergie extrapolée avec le mix électrique du pays retenu, ici <strong>{escape(target_country)}</strong>.</p>
+              <p>\\[
+              CO2_{{unitaire}} = \\frac{{E_{{unitaire}}}}{{1000}} \\times CI_c
+              \\qquad
+              Water_{{unitaire}} = \\frac{{E_{{unitaire}}}}{{1000}} \\times WI_c \\times 1000
+              \\]</p>
+              <p>Avec \\(CI_c = {format_scalar(target_carbon)}\\ \\text{{gCO2e/kWh}}\\) et \\(WI_c = {format_scalar(target_water)}\\ \\text{{L/kWh}}\\).</p>
+              <p>Le résultat unitaire retenu pour cette méthode conduit ensuite aux valeurs annualisées suivantes : énergie <code>{escape(method['energy'])}</code>, carbone <code>{escape(method['carbon'])}</code>, eau <code>{escape(method['water'])}</code>.</p>
+            </div>
+            <div class="method-modal-section">
+              <div class="math-label">4. Annualisation finale</div>
+              <p>La projection annuelle finale repose sur <code>{format_count(annual_multiplier)}</code> unité(s) d'inférence par an.</p>
+              <p>\\[
+              Impact_{{annuel}} = Impact_{{unitaire}} \\times N_{{annuel}}
+              \\]</p>
             </div>
             """
         )
@@ -680,14 +719,14 @@ def build_method_modal_body(method):
         carbon_note = ""
         if anchor.get("source_carbon_intensity") is not None and target_carbon is not None:
             carbon_note = (
-                f" intensité source ≈ <code>{format_scalar(anchor['source_carbon_intensity'])} gCO2e/kWh</code> "
-                f"remplacée par <code>{format_scalar(target_carbon)} gCO2e/kWh</code>"
+                f" intensité source ≈ \\({format_scalar(anchor['source_carbon_intensity'])}\\ \\text{{gCO2e/kWh}}\\) "
+                f"remplacée par \\({format_scalar(target_carbon)}\\ \\text{{gCO2e/kWh}}\\)"
             )
         water_note = ""
         if anchor.get("source_water_intensity") is not None and target_water is not None:
             water_note = (
-                f" intensité source ≈ <code>{format_scalar(anchor['source_water_intensity'])} L/kWh</code> "
-                f"remplacée par <code>{format_scalar(target_water)} L/kWh</code>"
+                f" intensité source ≈ \\({format_scalar(anchor['source_water_intensity'])}\\ \\text{{L/kWh}}\\) "
+                f"remplacée par \\({format_scalar(target_water)}\\ \\text{{L/kWh}}\\)"
             )
         anchor_lines.append(
             f"""
@@ -748,6 +787,7 @@ def build_method_comparisons(records, parsed_payload, result):
                 "carbon": format_result_card_display(method["annual_carbon_gco2e"], "carbon"),
                 "water": format_result_card_display(method["annual_water_ml"], "water"),
                 "refs": render_source_refs(rows),
+                "factor_rows": rows,
                 "annual_requests": annual_requests,
                 "annual_feature_uses": annual_feature_uses,
                 "requests_per_feature": requests_per_feature,
@@ -798,7 +838,7 @@ def render_method_comparisons(methods):
         for method in methods
     )
     return f"""
-    <div class="method-panel">
+    <div class="method-panel result-panel">
       <div class="result-method-grid">
         {cards}
       </div>
@@ -1144,6 +1184,11 @@ def render_market_models_table(records):
     rows = build_market_model_predictions(records)
     if not rows:
         return ""
+    standard_scenario = rows[0].get("standard_scenario", {}) if rows else {}
+    requests_per_hour = standard_scenario.get("requests_per_hour", 0)
+    reading_wpm = standard_scenario.get("reading_words_per_minute", 0)
+    words_per_token = standard_scenario.get("words_per_token", 0)
+    chart_rows = []
     body = []
     for row in rows:
         parameter_title = escape(str(row.get("parameter_source", "") or "Source non précisée"))
@@ -1152,10 +1197,23 @@ def render_market_models_table(records):
         method_map = row.get("method_results_by_id") or {}
         prompt_method = method_map.get("prompt_query_average") or {}
         page_method = method_map.get("page_average") or {}
-        prompt_energy = format_central_display(prompt_method.get("per_request_energy_wh", {}), "energy") if prompt_method else "n.d."
-        page_energy = format_central_display(page_method.get("per_request_energy_wh", {}), "energy") if page_method else "n.d."
+        prompt_energy = format_central_display(prompt_method.get("annual_energy_wh", {}), "energy") if prompt_method else "n.d."
+        page_energy = format_central_display(page_method.get("annual_energy_wh", {}), "energy") if page_method else "n.d."
         prompt_carbon = format_central_display(prompt_method.get("annual_carbon_gco2e", {}), "carbon") if prompt_method else "n.d."
         page_carbon = format_central_display(page_method.get("annual_carbon_gco2e", {}), "carbon") if page_method else "n.d."
+        chart_rows.append(
+            {
+                "label": row.get("display_name", row.get("model_id", "")),
+                "provider": row.get("provider", ""),
+                "kind": "model",
+                "prompt_energy_wh": float((prompt_method.get("annual_energy_wh") or {}).get("central", 0.0) or 0.0),
+                "page_energy_wh": float((page_method.get("annual_energy_wh") or {}).get("central", 0.0) or 0.0),
+                "prompt_carbon_gco2e": float((prompt_method.get("annual_carbon_gco2e") or {}).get("central", 0.0) or 0.0),
+                "page_carbon_gco2e": float((page_method.get("annual_carbon_gco2e") or {}).get("central", 0.0) or 0.0),
+                "prompt_water_ml": float((prompt_method.get("annual_water_ml") or {}).get("central", 0.0) or 0.0),
+                "page_water_ml": float((page_method.get("annual_water_ml") or {}).get("central", 0.0) or 0.0),
+            }
+        )
         body.append(
             f"""
             <tr>
@@ -1176,16 +1234,93 @@ def render_market_models_table(records):
             """
         )
 
+    chart_rows.extend(
+        [
+            {
+                "label": "Lampe fluorescente 1 h",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "prompt_energy_wh": 9.3,
+                "page_energy_wh": 9.3,
+                "prompt_carbon_gco2e": 0.0,
+                "page_carbon_gco2e": 0.0,
+                "prompt_water_ml": 0.0,
+                "page_water_ml": 0.0,
+            },
+            {
+                "label": "Ordinateur portable 1 h",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "prompt_energy_wh": 32.0,
+                "page_energy_wh": 32.0,
+                "prompt_carbon_gco2e": 0.0,
+                "page_carbon_gco2e": 0.0,
+                "prompt_water_ml": 0.0,
+                "page_water_ml": 0.0,
+            },
+            {
+                "label": "Chauffage électrique 1 h",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "prompt_energy_wh": 1500.0,
+                "page_energy_wh": 1500.0,
+                "prompt_carbon_gco2e": 0.0,
+                "page_carbon_gco2e": 0.0,
+                "prompt_water_ml": 0.0,
+                "page_water_ml": 0.0,
+            },
+            {
+                "label": "Douche 1 h",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "prompt_energy_wh": 0.0,
+                "page_energy_wh": 0.0,
+                "prompt_carbon_gco2e": 0.0,
+                "page_carbon_gco2e": 0.0,
+                "prompt_water_ml": 600000.0,
+                "page_water_ml": 600000.0,
+            },
+            {
+                "label": "Voiture thermique 1 h",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "prompt_energy_wh": 0.0,
+                "page_energy_wh": 0.0,
+                "prompt_carbon_gco2e": 23500.0,
+                "page_carbon_gco2e": 23500.0,
+                "prompt_water_ml": 0.0,
+                "page_water_ml": 0.0,
+            },
+        ]
+    )
+
     return f"""
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Visualisation</div>
+          <h3>Impact environnemental comparé des modèles</h3>
+        </div>
+        <div class="summary-badge">1 heure d'usage standardisé</div>
+      </div>
+      <p class="summary-intro">Le graphique ci-dessous représente les valeurs centrales estimées pour tous les modèles du catalogue sur un scénario standardisé d'inférence correspondant à <strong>1 heure d'usage actif</strong> : <strong>{requests_per_hour} interactions/heure</strong>, <strong>1000 tokens en entrée</strong>, <strong>550 tokens en sortie</strong>, une requête LLM par usage. La cadence horaire est dérivée d'une vitesse moyenne de lecture de <strong>{reading_wpm} mots/min</strong> (Brysbaert, 2019) et d'une convention de conversion de travail <strong>1 token ≈ {words_per_token} mot</strong>.</p>
+      <div class="chart-tabbar" role="tablist" aria-label="Indicateur du graphique d'inférence">
+        <button type="button" class="chart-tab-button is-active" data-model-chart-control="metric-tab" data-metric-value="energy" aria-selected="true">Énergie</button>
+        <button type="button" class="chart-tab-button" data-model-chart-control="metric-tab" data-metric-value="carbon" aria-selected="false">Carbone</button>
+        <button type="button" class="chart-tab-button" data-model-chart-control="metric-tab" data-metric-value="water" aria-selected="false">Eau</button>
+      </div>
+      <div id="models-impact-chart" class="models-impact-chart" data-chart-rows='{escape(json.dumps(chart_rows, ensure_ascii=False), quote=True)}'></div>
+      <p class="summary-intro models-benchmark-note">Repères intégrés dans le graphique, tous exprimés sur une durée d'une heure : énergie domestique issue de mesures Purdue Extension (lampe fluorescente ≈ 9,3 Wh sur 1 h ; ordinateur portable ≈ 32 Wh sur 1 h) et d'un chauffage électrique d'appoint de puissance nominale 1500 W (≈ 1,5 kWh sur 1 h) ; eau domestique issue de l'ADEME/INC et de l'Anses (douche ≈ 10 L/min, soit ≈ 600 L sur 1 h) ; carbone automobile issu de l'ICCT (2025, 235 gCO2e/km pour une voiture essence moyenne) avec une convention de comparaison fixée à 100 km parcourus en 1 h, soit ≈ 23,5 kgCO2e sur 1 h.</p>
+    </section>
     <section class="panel reference-panel">
       <div class="summary-header">
         <div>
           <div class="summary-kicker">Modèles</div>
           <h3>{len(rows)} modèles actuels suivis par le projet</h3>
         </div>
-        <div class="summary-badge">Inférence standardisée</div>
+        <div class="summary-badge">Comparaison détaillée</div>
       </div>
-      <p class="summary-intro">Le tableau ci-dessous compare les modèles suivis par le projet sur un scénario standardisé d'inférence: <strong>1 000 000 requêtes/an</strong>, <strong>1000 tokens en entrée</strong>, <strong>550 tokens en sortie</strong>, une requête LLM par usage. Pour chaque modèle, l'application affiche séparément l'estimation dérivée de la moyenne <strong>Wh/prompt|requête</strong> et l'estimation dérivée de la moyenne <strong>Wh/page</strong>.</p>
+      <p class="summary-intro">Le tableau ci-dessous compare les modèles suivis par le projet sur ce même scénario d'inférence. Pour chaque modèle, l'application affiche séparément l'estimation dérivée de la moyenne <strong>Wh/prompt|requête</strong> et l'estimation dérivée de la moyenne <strong>Wh/page</strong>.</p>
       <div class="table-toolbar">
         <label class="table-search-label" for="market-model-search">Rechercher un modèle</label>
         <input id="market-model-search" class="table-search-input" type="search" placeholder="Exemple: GPT, Claude, Mistral, US, 70B" data-table-search="market-models-table">
@@ -1198,10 +1333,10 @@ def render_market_models_table(records):
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="1" data-sort-type="text">Paramètres</button></th>
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="2" data-sort-type="text">Pays serveur</button></th>
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="3" data-sort-type="text">Pays retenu</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="4" data-sort-type="number">Énergie / prompt-réq</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="5" data-sort-type="number">Énergie / page</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="6" data-sort-type="number">Carbone / 1M prompt-réq</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="7" data-sort-type="number">Carbone / 1M page</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="4" data-sort-type="number">Énergie / h prompt-réq</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="5" data-sort-type="number">Énergie / h page</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="6" data-sort-type="number">Carbone / h prompt-réq</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="7" data-sort-type="number">Carbone / h page</button></th>
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="8" data-sort-type="text">Sources</button></th>
             </tr>
           </thead>
@@ -1236,13 +1371,23 @@ def render_training_models_table(records):
     rows = build_training_market_predictions(records)
     if not rows:
         return ""
+    chart_rows = []
     body = []
     for row in rows:
         results = row.get("training_results_by_id") or {}
         direct_carbon = results.get("direct_training_carbon") or {}
         lifecycle_carbon = results.get("creation_lifecycle_carbon") or {}
         lifecycle_water = results.get("creation_lifecycle_water") or {}
-        factor_rows = factor_details(records, row.get("selected_training_factors", []))
+        chart_rows.append(
+            {
+                "label": row.get("display_name", row.get("model_id", "")),
+                "provider": row.get("provider", ""),
+                "kind": "model",
+                "direct_training_carbon_tco2e": float(direct_carbon.get("value", 0.0) or 0.0),
+                "creation_lifecycle_carbon_tco2e": float(lifecycle_carbon.get("value", 0.0) or 0.0),
+                "creation_lifecycle_water_kl": float(lifecycle_water.get("value", 0.0) or 0.0),
+            }
+        )
         body.append(
             f"""
             <tr>
@@ -1255,14 +1400,76 @@ def render_training_models_table(records):
             """
         )
 
+    chart_rows.extend(
+        [
+            {
+                "label": "1 M km en voiture",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "direct_training_carbon_tco2e": 235.0,
+                "creation_lifecycle_carbon_tco2e": 235.0,
+                "creation_lifecycle_water_kl": 0.0,
+            },
+            {
+                "label": "5 000 vols commerciaux complets",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "direct_training_carbon_tco2e": 105250.0,
+                "creation_lifecycle_carbon_tco2e": 105250.0,
+                "creation_lifecycle_water_kl": 0.0,
+            },
+            {
+                "label": "1 000 douches courtes",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "direct_training_carbon_tco2e": 0.0,
+                "creation_lifecycle_carbon_tco2e": 0.0,
+                "creation_lifecycle_water_kl": 50.0,
+            },
+            {
+                "label": "1 000 bains",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "direct_training_carbon_tco2e": 0.0,
+                "creation_lifecycle_carbon_tco2e": 0.0,
+                "creation_lifecycle_water_kl": 150.0,
+            },
+            {
+                "label": "1 000 journées d'eau potable",
+                "provider": "Repère de vie courante",
+                "kind": "reference",
+                "direct_training_carbon_tco2e": 0.0,
+                "creation_lifecycle_carbon_tco2e": 0.0,
+                "creation_lifecycle_water_kl": 150.0,
+            },
+        ]
+    )
+
     return f"""
     <section class="panel reference-panel">
       <div class="summary-header">
         <div>
-          <div class="summary-kicker">Apprentissage</div>
-          <h3>{len(rows)} modèles actuels avec estimation des impacts d'apprentissage</h3>
+          <div class="summary-kicker">Visualisation</div>
+          <h3>Impacts d'apprentissage comparés des modèles</h3>
         </div>
         <div class="summary-badge">Screening</div>
+      </div>
+      <p class="summary-intro">Le graphique ci-dessous représente les valeurs centrales extrapolées pour tous les modèles du catalogue sur les trois familles d'indicateurs d'apprentissage actuellement exploitables. Des repères de vie courante sont insérés directement dans la liste pour situer les ordres de grandeur.</p>
+      <div class="chart-tabbar" role="tablist" aria-label="Indicateur du graphique d'apprentissage">
+        <button type="button" class="chart-tab-button is-active" data-training-chart-control="metric-tab" data-metric-value="direct_training_carbon" aria-selected="true">CO2e entraînement direct</button>
+        <button type="button" class="chart-tab-button" data-training-chart-control="metric-tab" data-metric-value="creation_lifecycle_carbon" aria-selected="false">CO2e cycle de création</button>
+        <button type="button" class="chart-tab-button" data-training-chart-control="metric-tab" data-metric-value="creation_lifecycle_water" aria-selected="false">Eau cycle de création</button>
+      </div>
+      <div id="training-impact-chart" class="models-impact-chart" data-training-chart-rows='{escape(json.dumps(chart_rows, ensure_ascii=False), quote=True)}'></div>
+      <p class="summary-intro models-benchmark-note">Repères intégrés dans le graphique : automobile issue de l'ICCT (2025, 235 gCO2e/km pour une voiture essence moyenne), avion complet dérivé de Klöwer et al. (2025) à partir de 577,97 MtCO2 et 27,45 millions de vols commerciaux observés en 2023, et eau domestique issue de l'ADEME/INC et de l'Anses (douche courte ≈ 50 L ; bain ≈ 150 L ; consommation quotidienne moyenne d'eau potable ≈ 150 L par personne en France).</p>
+    </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Modèles</div>
+          <h3>{len(rows)} modèles actuels avec estimation des impacts d'apprentissage</h3>
+        </div>
+        <div class="summary-badge">Comparaison détaillée</div>
       </div>
       <p class="summary-intro">Ce tableau projette les ordres de grandeur d'apprentissage des modèles actuels à partir des familles d'indicateurs réellement disponibles dans la littérature: <strong>CO2e d'entraînement direct</strong>, <strong>CO2e du cycle de création</strong> et <strong>eau du cycle de création</strong>. Les valeurs sont extrapolées par nombre de paramètres. Aucune correction pays n'est appliquée ici, faute d'ancrages énergétiques d'entraînement suffisamment homogènes.</p>
       <div class="table-toolbar">
@@ -1548,7 +1755,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         }.get(result.get("country_resolution"), "pays retenu")
         result_block = f"""
         <section class="panel result hero-card">
-          <h2>Evaluation environnementale</h2>
+          <div class="summary-header">
+            <div>
+              <div class="summary-kicker">Calcul</div>
+              <h3>DÉTAIL DU CALCUL</h3>
+            </div>
+          </div>
           <p class="lead">Estimation d'inférence fondée sur des indicateurs scientifiques sourcés et un calcul traçable.</p>
           <p class="scope-note">Périmètre retenu: seules les externalités d'inférence du LLM sont prises en compte. L'apprentissage du modèle, les consommations du système logiciel et les infrastructures annexes sont exclus de cette estimation affichée.</p>
           <p class="meta-inline">Niveau de preuve: <strong>{escape(evidence.get('label', 'Non qualifie'))}</strong></p>
@@ -1579,6 +1791,28 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       {result_methods_block}
       {error_block}
       {result_block}
+    </section>
+    """
+    training_tab = f"""
+    <section class="tab-panel" id="tab-training-panel" data-tab-panel="training">
+      {training_models_block}
+      <section class="panel reference-panel">
+        <div class="summary-header">
+          <div>
+            <div class="summary-kicker">Référentiel</div>
+            <h3>{reference_counts['training']} indicateurs d'apprentissage issus de la littérature scientifique</h3>
+          </div>
+          <div class="summary-badge">Apprentissage</div>
+        </div>
+        <p class="summary-intro">Cette page présente des indicateurs documentés sur les externalités environnementales liées à l'apprentissage et au cycle de vie de création des modèles LLM. Les références macro d'infrastructure et les sources institutionnelles hors périmètre LLM ont été exclues.</p>
+        {training_reference_block}
+        <p class="summary-intro">`*` indique une valeur de nombre de paramètres estimée et non officiellement publiée par le fournisseur.</p>
+      </section>
+    </section>
+    """
+    models_tab = f"""
+    <section class="tab-panel" id="tab-models-panel" data-tab-panel="models">
+      {market_models_block}
       <section class="panel reference-panel">
         <div class="summary-header">
           <div>
@@ -1591,11 +1825,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         {inference_reference_block}
         <p class="summary-intro">`*` indique une valeur de nombre de paramètres estimée et non officiellement publiée par le fournisseur.</p>
       </section>
-    </section>
-    """
-    models_tab = f"""
-    <section class="tab-panel" id="tab-models-panel" data-tab-panel="models">
-      {market_models_block}
     </section>
     """
 
@@ -1619,15 +1848,15 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
   <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
   <style>
     :root {{
-      --bg: #f8f9fa;
-      --paper: #ffffff;
-      --ink: #212529;
-      --muted: #6c757d;
-      --line: #dee2e6;
-      --accent: #0d6efd;
-      --accent-soft: #e7f1ff;
+      --bg: #f7f7f2;
+      --paper: #fcfcf8;
+      --ink: #20261f;
+      --muted: #667065;
+      --line: #d7dbd2;
+      --accent: #3f5a49;
+      --accent-soft: #eff2ec;
       --error: #dc3545;
-      --shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.08);
+      --shadow: none;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -1638,32 +1867,33 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       scroll-behavior: smooth;
     }}
     .wrap {{ max-width: 960px; margin: 0 auto; padding: 24px 16px 40px; }}
-    .hero {{ margin-bottom: 16px; }}
+    .hero {{ margin-bottom: 20px; }}
     .eyebrow {{
       display: inline-block;
       margin-bottom: 8px;
-      padding: 0.25rem 0.55rem;
-      border-radius: 999px;
-      background: var(--accent-soft);
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
       color: var(--accent);
-      font-size: 0.74rem;
+      font-size: 0.78rem;
       font-weight: 600;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--line);
     }}
-    h1 {{ margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 2.5rem); line-height: 1.15; font-weight: 700; }}
+    h1 {{ margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 2.35rem); line-height: 1.18; font-weight: 650; }}
     h2, h3 {{ margin: 0 0 0.75rem; font-weight: 700; }}
     .subtitle {{ max-width: 760px; color: var(--muted); font-size: 0.98rem; line-height: 1.55; margin: 0; }}
     .panel {{
       background: var(--paper);
       border: 1px solid var(--line);
-      border-radius: 0.75rem;
-      padding: 1rem 1.1rem;
+      border-radius: 0.4rem;
+      padding: 1rem 1rem;
       box-shadow: var(--shadow);
       margin-bottom: 1rem;
     }}
     .hero-card {{
-      border-color: rgba(13,110,253,0.18);
-      background: #ffffff;
+      border-color: var(--line);
+      background: var(--paper);
     }}
     .alert-panel.error {{
       border-color: rgba(220,53,69,0.3);
@@ -1672,24 +1902,24 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     textarea, input {{
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 0.5rem;
+      border-radius: 0.35rem;
       padding: 0.875rem 1rem;
       font: inherit;
-      background: #fff;
+      background: #fdfdf9;
     }}
     textarea:focus, input:focus {{
       outline: none;
-      border-color: rgba(13,110,253,0.55);
-      box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.15);
+      border-color: var(--accent);
+      box-shadow: none;
     }}
     textarea {{ min-height: 200px; resize: vertical; }}
     label {{ display: block; font-size: 0.95rem; font-weight: 600; color: var(--ink); margin-bottom: 0.5rem; }}
     button {{
       margin-top: 1rem;
-      border: 0;
-      border-radius: 0.5rem;
-      background: var(--accent);
-      color: white;
+      border: 1px solid var(--accent);
+      border-radius: 0.35rem;
+      background: var(--paper);
+      color: var(--accent);
       padding: 0.75rem 1.15rem;
       font: inherit;
       font-weight: 600;
@@ -1698,9 +1928,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       align-items: center;
       gap: 0.65rem;
     }}
-    button:hover {{ background: #0b5ed7; }}
+    button:hover {{ background: var(--accent-soft); }}
     button:disabled {{
-      background: #6ea8fe;
+      background: #f1f3ef;
+      color: #8a948b;
+      border-color: #b9c0b7;
       cursor: wait;
     }}
     .spinner {{
@@ -1769,7 +2001,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       padding: 0.75rem 0.8rem;
       border: 1px solid var(--line);
       border-radius: 0.6rem;
-      background: #f8f9fa;
+      background: #f7f7f3;
     }}
     .submetric-label {{
       display: block;
@@ -1793,17 +2025,22 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       padding-top: 0.9rem;
       border-top: 1px solid var(--line);
     }}
+    .result-panel {{
+      margin-bottom: 1.5rem;
+      padding-top: 0;
+      border-top: 0;
+    }}
     .result-method-grid {{
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 0.9rem;
     }}
     .result-method-card {{
-      border: 1px solid rgba(13,110,253,0.18);
-      border-radius: 0.8rem;
-      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 0.4rem;
+      background: var(--paper);
       padding: 1rem;
-      box-shadow: 0 0.35rem 0.9rem rgba(0, 0, 0, 0.05);
+      box-shadow: none;
     }}
     .result-method-head {{
       display: flex;
@@ -1840,14 +2077,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }}
     .result-method-metrics {{
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 0.6rem;
     }}
     .result-method-metric {{
       padding: 0.75rem 0.8rem;
       border: 1px solid var(--line);
-      border-radius: 0.65rem;
-      background: #f8fbff;
+      border-radius: 0.35rem;
+      background: #f8f8f4;
     }}
     .result-method-label {{
       display: block;
@@ -1871,10 +2108,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }}
     .result-method-detail-card {{
       border: 1px solid var(--line);
-      border-radius: 0.8rem;
-      background: #fff;
+      border-radius: 0.4rem;
+      background: var(--paper);
       padding: 1rem;
-      box-shadow: 0 0.25rem 0.7rem rgba(0, 0, 0, 0.04);
+      box-shadow: none;
     }}
     .result-method-detail-card + .result-method-detail-card {{
       margin-top: 0.9rem;
@@ -1893,10 +2130,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     .method-detail-button,
     .modal-close-button {{
       appearance: none;
-      border: 1px solid rgba(13,110,253,0.2);
-      background: var(--accent-soft);
+      border: 1px solid var(--line);
+      background: transparent;
       color: var(--accent);
-      border-radius: 999px;
+      border-radius: 0.35rem;
       padding: 0.45rem 0.75rem;
       font: inherit;
       font-size: 0.85rem;
@@ -1906,7 +2143,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }}
     .method-detail-button:hover,
     .modal-close-button:hover {{
-      background: #dce9ff;
+      background: var(--accent-soft);
     }}
     .method-modal {{
       border: 0;
@@ -1954,8 +2191,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       justify-content: center;
       width: 1.25rem;
       height: 1.25rem;
-      border-radius: 999px;
-      background: var(--accent-soft);
+      border-radius: 0.2rem;
+      background: transparent;
+      border: 1px solid var(--line);
       color: var(--accent);
       font-weight: 700;
       line-height: 1;
@@ -1967,15 +2205,15 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       margin-top: 0.7rem;
       padding: 0.85rem 0.9rem;
       border: 1px solid var(--line);
-      border-radius: 0.65rem;
-      background: #f8f9fa;
+      border-radius: 0.35rem;
+      background: #f8f8f4;
     }}
     .lead {{ color: var(--muted); line-height: 1.6; margin: 0; }}
     .scope-note {{
       margin: 0.6rem 0 0;
       padding: 0.7rem 0.85rem;
-      border-left: 3px solid var(--accent);
-      background: #f8fbff;
+      border-left: 2px solid var(--line);
+      background: #f8f8f4;
       color: #495057;
       font-size: 0.93rem;
       line-height: 1.55;
@@ -1997,24 +2235,25 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }}
     .tab-button {{
       appearance: none;
-      border: 1px solid var(--line);
-      background: #fff;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      background: transparent;
       color: #495057;
-      border-radius: 999px;
-      padding: 0.65rem 0.95rem;
+      border-radius: 0;
+      padding: 0.4rem 0 0.45rem;
       font: inherit;
       font-weight: 600;
       cursor: pointer;
-      margin: 0;
+      margin: 0 1rem 0 0;
     }}
     .tab-button:hover {{
-      border-color: rgba(13,110,253,0.35);
-      background: #f8fbff;
+      border-color: rgba(63,90,73,0.35);
+      background: transparent;
     }}
     .tab-button.is-active {{
-      background: var(--accent-soft);
+      background: transparent;
       color: var(--accent);
-      border-color: rgba(13,110,253,0.2);
+      border-color: var(--accent);
     }}
     .tab-panel {{
       display: none;
@@ -2039,13 +2278,13 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }}
     .summary-badge {{
       flex: 0 0 auto;
-      border: 1px solid rgba(13,110,253,0.18);
-      border-radius: 999px;
-      padding: 0.4rem 0.75rem;
-      background: var(--accent-soft);
+      border: 1px solid var(--line);
+      border-radius: 0.35rem;
+      padding: 0.35rem 0.55rem;
+      background: transparent;
       color: var(--accent);
-      font-size: 0.82rem;
-      font-weight: 600;
+      font-size: 0.8rem;
+      font-weight: 500;
     }}
     .summary-intro {{
       margin: 0 0 0.85rem;
@@ -2057,13 +2296,13 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     .summary-body {{
       border: 1px solid var(--line);
       padding: 0.9rem 1rem;
-      background: #f8fbff;
-      border-radius: 0.75rem;
+      background: #f8f8f4;
+      border-radius: 0.35rem;
       line-height: 1.7;
       font-size: 0.96rem;
     }}
     .reference-panel {{
-      border-color: rgba(13,110,253,0.14);
+      border-color: rgba(70,103,86,0.14);
     }}
     .table-toolbar {{
       display: flex;
@@ -2081,11 +2320,86 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       max-width: 420px;
       padding: 0.7rem 0.9rem;
     }}
+    .models-chart-panel {{
+      margin-bottom: 1rem;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 0.4rem;
+      background: var(--paper);
+    }}
+    .models-chart-toolbar {{
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }}
+    .models-chart-field {{
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 200px;
+    }}
+    .models-chart-field label {{
+      margin: 0;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #495057;
+    }}
+    .models-chart-field select {{
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 0.35rem;
+      padding: 0.7rem 0.8rem;
+      font: inherit;
+      background: #fdfdf9;
+    }}
+    .chart-tabbar {{
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }}
+    .chart-tab-button {{
+      margin-top: 0;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0.45rem 0.8rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }}
+    .chart-tab-button:hover {{
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(63,90,73,0.24);
+    }}
+    .chart-tab-button.is-active {{
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: rgba(63,90,73,0.24);
+    }}
+    .models-impact-chart {{
+      border: 1px solid var(--line);
+      border-radius: 0.35rem;
+      background: #f8f8f4;
+      padding: 0.9rem;
+      min-height: 480px;
+    }}
+    .models-benchmark-note {{
+      margin-top: 0.85rem;
+      font-size: 0.88rem;
+    }}
+    .models-impact-chart svg {{
+      width: 100%;
+      height: auto;
+      display: block;
+    }}
     .reference-table-wrap {{
       overflow-x: auto;
       border: 1px solid var(--line);
-      border-radius: 0.65rem;
-      background: #fff;
+      border-radius: 0.35rem;
+      background: var(--paper);
     }}
     .reference-table {{
       width: 100%;
@@ -2100,7 +2414,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       vertical-align: top;
     }}
     .reference-table th {{
-      background: #f8f9fa;
+      background: #f0f2ee;
       font-size: 0.82rem;
       text-transform: uppercase;
       letter-spacing: 0.03em;
@@ -2126,7 +2440,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       border-bottom: 0;
     }}
     .reference-table tbody tr:target td {{
-      background: #fff8db;
+      background: #f3ecd7;
     }}
     .reference-locator {{
       margin-top: 0.2rem;
@@ -2138,8 +2452,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       display: inline-block;
       margin-left: 0.15rem;
       padding: 0.05rem 0.35rem;
-      border-radius: 999px;
-      background: rgba(13,110,253,0.1);
+      border-radius: 0.25rem;
+      background: var(--accent-soft);
       color: var(--accent);
       font-size: 0.8rem;
       font-weight: 700;
@@ -2147,7 +2461,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       vertical-align: baseline;
     }}
     .source-tag:hover {{
-      background: rgba(13,110,253,0.18);
+      background: rgba(70,103,86,0.18);
       text-decoration: none;
     }}
     .math-panel {{
@@ -2158,8 +2472,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       margin-bottom: 0.85rem;
       padding: 0.9rem;
       border: 1px solid var(--line);
-      border-radius: 0.65rem;
-      background: #f8f9fa;
+      border-radius: 0.35rem;
+      background: #f8f8f4;
     }}
     .assumptions-box-compact {{
       margin-top: 0.9rem;
@@ -2205,15 +2519,15 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     .inline-ref {{
       display: inline-block;
       padding: 0.1rem 0.38rem;
-      border-radius: 999px;
-      background: rgba(13,110,253,0.1);
+      border-radius: 0.25rem;
+      background: var(--accent-soft);
       color: var(--accent);
       font-size: 0.74rem;
       font-weight: 700;
       text-decoration: none;
     }}
     .inline-ref:hover {{
-      background: rgba(13,110,253,0.18);
+      background: rgba(70,103,86,0.18);
       text-decoration: none;
     }}
     .metric-detail-body p,
@@ -2245,11 +2559,13 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     <nav class="tabs" aria-label="Navigation principale">
       <button type="button" class="tab-button is-active" data-tab-target="home">Accueil</button>
       <button type="button" class="tab-button" data-tab-target="how">How it works</button>
-      <button type="button" class="tab-button" data-tab-target="models">Modèles</button>
+      <button type="button" class="tab-button" data-tab-target="training">Apprentissage</button>
+      <button type="button" class="tab-button" data-tab-target="models">Inférence</button>
     </nav>
 
     {home_tab}
     {how_it_works_tab}
+    {training_tab}
     {models_tab}
   </main>
   <script>
@@ -2259,6 +2575,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const tabPanels = Array.from(document.querySelectorAll('[data-tab-panel]'));
     const searchInputs = Array.from(document.querySelectorAll('[data-table-search]'));
     const sortButtons = Array.from(document.querySelectorAll('[data-sort-table]'));
+    const modelsChart = document.getElementById('models-impact-chart');
+    const chartControls = Array.from(document.querySelectorAll('[data-model-chart-control="metric-tab"]'));
+    const trainingChart = document.getElementById('training-impact-chart');
+    const trainingChartControls = Array.from(document.querySelectorAll('[data-training-chart-control="metric-tab"]'));
     if (estimateForm && submitButton) {{
       estimateForm.addEventListener('submit', function () {{
         submitButton.disabled = true;
@@ -2324,6 +2644,176 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         rows.forEach((row) => tbody.appendChild(row));
       }});
     }});
+    const formatChartValue = (value, metric) => {{
+      if (metric === 'energy') {{
+        if (value >= 1000) return `${{(value / 1000).toFixed(1)}} kWh`;
+        if (value >= 1) return `${{value.toFixed(1)}} Wh`;
+        return `${{value.toFixed(4)}} Wh`;
+      }}
+      if (metric === 'carbon') {{
+        if (value >= 1000) return `${{(value / 1000).toFixed(2)}} kgCO2e`;
+        return `${{value.toFixed(1)}} gCO2e`;
+      }}
+      if (metric === 'water') {{
+        if (value >= 1000) return `${{(value / 1000).toFixed(1)}} L`;
+        return `${{value.toFixed(1)}} mL`;
+      }}
+      return String(value);
+    }};
+    const buildChartMarkup = (rows, metric, family) => {{
+      if (!rows.length) {{
+        return '<p class="lead">Aucune donnée disponible pour cette sélection.</p>';
+      }}
+      const key = `${{family}}_${{metric}}_${{metric === 'energy' ? 'wh' : metric === 'carbon' ? 'gco2e' : 'ml'}}`;
+      const sorted = rows
+        .map((row) => ({{
+          label: row.label,
+          provider: row.provider,
+          value: Number(row[key] || 0),
+          kind: row.kind || 'model',
+        }}))
+        .filter((row) => row.value > 0)
+        .sort((a, b) => b.value - a.value);
+      if (!sorted.length) {{
+        return '<p class="lead">Aucune valeur exploitable pour cette sélection.</p>';
+      }}
+      const maxValue = sorted[0].value || 1;
+      const barHeight = 26;
+      const rowGap = 18;
+      const chartWidth = 880;
+      const labelWidth = 210;
+      const valueWidth = 150;
+      const barStart = labelWidth + 12;
+      const barMaxWidth = chartWidth - labelWidth - valueWidth - 40;
+      const chartHeight = sorted.length * (barHeight + rowGap) + 24;
+      const bars = sorted.map((row, index) => {{
+        const y = 12 + index * (barHeight + rowGap);
+        const width = Math.max(2, (row.value / maxValue) * barMaxWidth);
+        const valueText = formatChartValue(row.value, metric);
+        const fill = row.kind === 'reference' ? '#8c7a5b' : '#3f5a49';
+        return `
+          <text x="0" y="${{y + 17}}" font-size="13" fill="#212529">${{row.label}}</text>
+          <text x="0" y="${{y + 31}}" font-size="11" fill="#6c757d">${{row.provider}}</text>
+          <rect x="${{barStart}}" y="${{y}}" width="${{width}}" height="${{barHeight}}" rx="4" fill="${{fill}}"></rect>
+          <text x="${{barStart + width + 10}}" y="${{y + 17}}" font-size="12" fill="#212529">${{valueText}}</text>
+        `;
+      }}).join('');
+      const titleMetric = metric === 'energy' ? 'Énergie' : metric === 'carbon' ? 'Carbone' : 'Eau';
+      const titleFamily = family === 'prompt' ? 'prompt|requête' : 'page';
+      return `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">Comparaison des valeurs centrales estimées pour l'indicateur <strong>${{titleMetric}}</strong>, selon la famille <strong>${{titleFamily}}</strong>.</div>
+        <svg viewBox="0 0 ${{chartWidth}} ${{chartHeight}}" role="img" aria-label="Graphique comparatif des modèles">${{bars}}</svg>
+      `;
+    }};
+    const renderModelsChart = () => {{
+      if (!modelsChart) return;
+      const metricControl = document.querySelector('[data-model-chart-control="metric-tab"].is-active');
+      const metric = metricControl ? metricControl.getAttribute('data-metric-value') : 'energy';
+      const family = 'prompt';
+      let rows = [];
+      try {{
+        rows = JSON.parse(modelsChart.getAttribute('data-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      modelsChart.innerHTML = buildChartMarkup(rows, metric, family);
+    }};
+    chartControls.forEach((control) => {{
+      control.addEventListener('click', () => {{
+        chartControls.forEach((item) => {{
+          const isActive = item === control;
+          item.classList.toggle('is-active', isActive);
+          item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        }});
+        renderModelsChart();
+      }});
+    }});
+    renderModelsChart();
+    const formatTrainingChartValue = (value, metric) => {{
+      if (metric === 'creation_lifecycle_water') {{
+        if (value >= 1000) return `${{value.toFixed(0)}} kL`;
+        if (value >= 100) return `${{value.toFixed(1)}} kL`;
+        return `${{value.toFixed(2)}} kL`;
+      }}
+      if (value >= 1000) return `${{value.toFixed(0)}} tCO2e`;
+      if (value >= 100) return `${{value.toFixed(1)}} tCO2e`;
+      return `${{value.toFixed(2)}} tCO2e`;
+    }};
+    const buildTrainingChartMarkup = (rows, metric) => {{
+      if (!rows.length) {{
+        return '<p class="lead">Aucune donnée disponible pour cette sélection.</p>';
+      }}
+      const key = metric === 'direct_training_carbon'
+        ? 'direct_training_carbon_tco2e'
+        : metric === 'creation_lifecycle_carbon'
+          ? 'creation_lifecycle_carbon_tco2e'
+          : 'creation_lifecycle_water_kl';
+      const sorted = rows
+        .map((row) => ({{
+          label: row.label,
+          provider: row.provider,
+          value: Number(row[key] || 0),
+          kind: row.kind || 'model',
+        }}))
+        .filter((row) => row.value > 0)
+        .sort((a, b) => b.value - a.value);
+      if (!sorted.length) {{
+        return '<p class="lead">Aucune valeur exploitable pour cette sélection.</p>';
+      }}
+      const maxValue = sorted[0].value || 1;
+      const barHeight = 26;
+      const rowGap = 18;
+      const chartWidth = 880;
+      const labelWidth = 210;
+      const valueWidth = 150;
+      const barStart = labelWidth + 12;
+      const barMaxWidth = chartWidth - labelWidth - valueWidth - 40;
+      const chartHeight = sorted.length * (barHeight + rowGap) + 24;
+      const bars = sorted.map((row, index) => {{
+        const y = 12 + index * (barHeight + rowGap);
+        const width = Math.max(2, (row.value / maxValue) * barMaxWidth);
+        const valueText = formatTrainingChartValue(row.value, metric);
+        const fill = row.kind === 'reference' ? '#8c7a5b' : '#3f5a49';
+        return `
+          <text x="0" y="${{y + 17}}" font-size="13" fill="#212529">${{row.label}}</text>
+          <text x="0" y="${{y + 31}}" font-size="11" fill="#6c757d">${{row.provider}}</text>
+          <rect x="${{barStart}}" y="${{y}}" width="${{width}}" height="${{barHeight}}" rx="4" fill="${{fill}}"></rect>
+          <text x="${{barStart + width + 10}}" y="${{y + 17}}" font-size="12" fill="#212529">${{valueText}}</text>
+        `;
+      }}).join('');
+      const titleMetric = metric === 'direct_training_carbon'
+        ? 'CO2e entraînement direct'
+        : metric === 'creation_lifecycle_carbon'
+          ? 'CO2e cycle de création'
+          : 'Eau cycle de création';
+      return `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">Comparaison des valeurs centrales extrapolées pour l'indicateur <strong>${{titleMetric}}</strong>.</div>
+        <svg viewBox="0 0 ${{chartWidth}} ${{chartHeight}}" role="img" aria-label="Graphique comparatif des impacts d'apprentissage">${{bars}}</svg>
+      `;
+    }};
+    const renderTrainingChart = () => {{
+      if (!trainingChart) return;
+      const metricControl = document.querySelector('[data-training-chart-control="metric-tab"].is-active');
+      const metric = metricControl ? metricControl.getAttribute('data-metric-value') : 'direct_training_carbon';
+      let rows = [];
+      try {{
+        rows = JSON.parse(trainingChart.getAttribute('data-training-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      trainingChart.innerHTML = buildTrainingChartMarkup(rows, metric);
+    }};
+    trainingChartControls.forEach((control) => {{
+      control.addEventListener('click', () => {{
+        trainingChartControls.forEach((item) => {{
+          const isActive = item === control;
+          item.classList.toggle('is-active', isActive);
+          item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        }});
+        renderTrainingChart();
+      }});
+    }});
+    renderTrainingChart();
   </script>
 </body>
 </html>
