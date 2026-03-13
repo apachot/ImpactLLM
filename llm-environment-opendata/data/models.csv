@@ -1,7 +1,23 @@
 model_id,provider,aliases,active_parameters_billion,total_parameters_billion,parameter_value_status,parameter_confidence,parameter_source,parameter_source_url,notes
-gemma-2b-it,google,"gemma2b|gemma-2b|gemma 2b it|gemma-2b-it",2,2,observed,high,"Ren et al. (2024) model scope",https://www.nature.com/articles/s41598-024-76682-6,"Open model used as low-parameter inference anchor."
-llama-3-70b,meta,"llama3-70b|llama-3-70b|llama 3 70b|llama3 70b",70,70,observed,high,"Ren et al. (2024) model scope",https://www.nature.com/articles/s41598-024-76682-6,"Open model used as high-parameter inference anchor."
-bloom-176b,bigscience,"bloom176b|bloom-176b|bloom 176b",176,176,observed,high,"Luccioni et al. (2023)",https://www.jmlr.org/papers/v24/23-0069.html,"Open training anchor."
-llama-3.1-405b,meta,"llama3.1405b|llama-3.1-405b|llama 3.1 405b|llama405b",405,405,observed,high,"Meta (2024) model card",https://huggingface.co/meta-llama/Llama-3.1-405B,"Open training anchor."
-gpt-4o-mini,openai,"gpt4omini|gpt-4omini|gpt 4o mini|gpt-4o-mini",8,8,estimated,low,"Internal approximate profile for extrapolation",,"Approximate active-parameter profile used only for screening-level extrapolation."
-gpt-4.1-mini,openai,"gpt41mini|gpt-4.1-mini|gpt 4.1 mini",8,8,estimated,low,"Internal approximate profile for extrapolation",,"Approximate active-parameter profile used only for screening-level extrapolation."
+transformer-big,google,transformer big|transformer (big)|vaswani transformer big,0.213,0.213,estimated,medium,Estimated from the Transformer big configuration in Vaswani et al. (2017),https://arxiv.org/abs/1706.03762,Approximate parameter count derived from the original Transformer big architecture; used only to label the Strubell et al. (2019) Table 1 reference.
+gemini,google,gemini|gemini apps|gemini app|gemini pro,180,180,estimated,low,Alan D. Thompson estimate for Gemini Pro,https://lifearchitect.ai/gemini/,Third-party estimate; Google does not publicly disclose Gemini parameter counts. Do not treat as an official value.
+gemma-2b-it,google,gemma2b|gemma-2b|gemma 2b it|gemma-2b-it,2,2,observed,high,Ren et al. (2024) model scope,https://www.nature.com/articles/s41598-024-76682-6,Open model used as low-parameter inference anchor.
+llama-3-70b,meta,llama3-70b|llama-3-70b|llama 3 70b|llama3 70b,70,70,observed,high,Ren et al. (2024) model scope,https://www.nature.com/articles/s41598-024-76682-6,Open model used as high-parameter inference anchor.
+bloom-176b,bigscience,bloom176b|bloom-176b|bloom 176b,176,176,observed,high,Luccioni et al. (2023),https://www.jmlr.org/papers/v24/23-0069.html,Open training anchor.
+llama-3.1-405b,meta,llama3.1405b|llama-3.1-405b|llama 3.1 405b|llama405b,405,405,observed,high,Meta (2024) model card,https://huggingface.co/meta-llama/Llama-3.1-405B,Open training anchor.
+gpt-4o-mini,openai,gpt4omini|gpt-4omini|gpt 4o mini|gpt-4o-mini,8,8,estimated,low,Internal approximate profile for extrapolation,,Approximate active-parameter profile used only for screening-level extrapolation.
+gpt-4.1-mini,openai,gpt41mini|gpt-4.1-mini|gpt 4.1 mini,8,8,estimated,low,Internal approximate profile for extrapolation,,Approximate active-parameter profile used only for screening-level extrapolation.
+llama-3.1-8b,meta,llama3.18b|llama-3.1-8b|llama 3.1 8b|llama31 8b,8,8,observed,high,Meta (2024) model card,https://huggingface.co/meta-llama/Llama-3.1-405B,Reported in Llama 3.1 family training tables.
+llama-3.1-70b,meta,llama3.170b|llama-3.1-70b|llama 3.1 70b|llama31 70b,70,70,observed,high,Meta (2024) model card,https://huggingface.co/meta-llama/Llama-3.1-405B,Reported in Llama 3.1 family training tables.
+olmo-20m,allenai,olmo 20m|olmo20m,0.02,0.02,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Unreleased internal experiment.
+olmo-60m,allenai,olmo 60m|olmo60m,0.06,0.06,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Unreleased internal experiment.
+olmo-150m,allenai,olmo 150m|olmo150m,0.15,0.15,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Unreleased internal experiment.
+olmo-300m,allenai,olmo 300m|olmo300m,0.3,0.3,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Unreleased internal experiment.
+olmo-700m,allenai,olmo 700m|olmo700m,0.7,0.7,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Unreleased internal experiment.
+olmo-1b-3t,allenai,olmo 1b|olmo1b|olmo 1b 3t,1,1,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Dense 1B model trained to 3T tokens.
+olmo-7b-unreleased,allenai,olmo 7b unreleased|olmo7b unreleased|olmo 7b,7,7,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Unreleased internal experiment.
+olmo-7b-twin,allenai,olmo 7b twin|olmo7b twin,7,7,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Twin training run variant.
+olmo-0724-7b,allenai,olmo 0724 7b|olmo (04|07)24 7b|olmo 0424 7b|olmo 0724,7,7,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,Displayed as OLMo (04|07)24 7B in Table 2.
+olmo-2-7b,allenai,olmo 2 7b|olmo2 7b|olmo2-7b,7,7,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,OLMo 2 dense model.
+olmo-2-13b,allenai,olmo 2 13b|olmo2 13b|olmo2-13b,13,13,observed,high,Morrison et al. (2025) Table 2,https://arxiv.org/abs/2503.05804,OLMo 2 dense model trained in Iowa cluster.
+olmoe-0924,allenai,olmoe 0924|olmoe0924|olmoe 1b 7b,1,7,observed,high,Morrison et al. (2025) Table 2 and Section 3.3,https://arxiv.org/abs/2503.05804,Mixture-of-experts model with 1B active and 7B total parameters.

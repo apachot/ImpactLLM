@@ -157,6 +157,15 @@ def reference_anchor_id(row):
     return f"ref-{record_id}"
 
 
+def format_reference_parameters(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return "n.d."
+    if "est" in raw.lower():
+        return f"{raw}*"
+    return raw
+
+
 def html_id_attr(value):
     if not value:
         return ""
@@ -643,7 +652,13 @@ def build_literature_catalog_rows():
         source_url = str(record.get("source_url", ""))
         if record.get("study_key") in excluded_study_keys:
             continue
-        if record.get("record_id") in {"morrison2025_dev_share", "morrison2025_power_variation", "li2025_chatbot_water"}:
+        if record.get("record_id") in {
+            "morrison2025_dev_share",
+            "morrison2025_power_variation",
+            "li2025_chatbot_water",
+            "strubell2019_co2_tuning_pipeline",
+            "strubell2019_co2_nas",
+        }:
             continue
         if "iea.org" in source_url or "publicpower.org" in source_url:
             continue
@@ -681,7 +696,7 @@ def render_reference_catalog():
             f"<td class=\"reference-number\">[{escape(str(ref_number))}]</td>"
             f"<td>{escape(row['data_type'])}</td>"
             f"<td>{escape(row.get('model_or_scope', '') or 'n.d.')}</td>"
-            f"<td>{escape(row.get('model_parameters', '') or 'n.d.')}</td>"
+            f"<td>{escape(format_reference_parameters(row.get('model_parameters', '') or 'n.d.'))}</td>"
             f"<td>{escape(row.get('geography', '') or 'n.d.')}</td>"
             f"<td>{escape(row['metric_value'])}</td>"
             f"<td>"
@@ -720,6 +735,7 @@ def render_reference_catalog():
           </tbody>
         </table>
       </div>
+      <p class="summary-intro">`*` indique une valeur de nombre de paramètres estimée et non officiellement publiée par le fournisseur.</p>
     </section>
     """
 
