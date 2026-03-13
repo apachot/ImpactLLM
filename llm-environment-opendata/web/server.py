@@ -265,6 +265,26 @@ def format_range_display(range_obj, unit_kind):
     return f"{low_value} - {high_value} {unit}"
 
 
+def format_central_display(range_obj, unit_kind):
+    if not range_obj:
+        return "n.d."
+    return format_value_display(range_obj.get("central", 0.0), unit_kind)
+
+
+def format_dispersion_ratio(range_obj):
+    if not range_obj:
+        return "n.d."
+    low = float(range_obj.get("low", 0.0) or 0.0)
+    high = float(range_obj.get("high", 0.0) or 0.0)
+    central = float(range_obj.get("central", 0.0) or 0.0)
+    if central <= 0 or low <= 0 or high <= 0:
+        return "n.d."
+    spread = high / low if low > 0 else None
+    if spread is None:
+        return "n.d."
+    return f"×{spread:.1f}"
+
+
 def format_value_display(value, unit_kind):
     formatted_value, unit = format_scaled_value(value, unit_kind)
     return f"{formatted_value} {unit}".strip()
@@ -288,6 +308,12 @@ def humanize_assumption(text):
         "because the model is treated as a proprietary hosted service": "car le modele est traite comme un service proprietaire heberge.",
         "Carbon and water recalculated with the project country mix for": "Le calcul carbone/eau utilise le mix electrique du pays du projet pour",
         "because the model is treated as open-weight or self-hosted": "car le modele est traite comme open weight ou auto-heberge.",
+        "Page-based method anchored on the nearest available source model in parameter count:": "La methode par page retient comme ancrage le modele le plus proche en nombre de parametres :",
+        "Final central result uses the prompt-based method only because no empirical prompt-to-page conversion is available and the target model is treated as a hosted proprietary service": "Le resultat central final utilise uniquement la methode par prompt, car aucune conversion empirique prompt-vers-page n'est disponible et le modele cible est traite comme un service proprietaire heberge.",
+        "Final central result uses the page-based method only because no empirical prompt-to-page conversion is available and the target model is treated as open-weight or self-hosted": "Le resultat central final utilise uniquement la methode par page, car aucune conversion empirique prompt-vers-page n'est disponible et le modele cible est traite comme open weight ou auto-heberge.",
+        "Final central result averages the available inference methods": "Le resultat central final moyenne les methodes d'inference disponibles.",
+        "Unified inference model calibrated from the nearest literature energy anchor after harmonizing the observed value to Wh per request": "Le modele d'inference utilise l'ancrage energetique de la litterature le plus proche, harmonise en Wh par requete.",
+        "Nearest calibration anchor:": "Ancrage de calibration le plus proche :",
         "LLM request(s) per feature use": "appel(s) au LLM par usage de la fonctionnalite",
         "feature uses per year": "usages annuels de la fonctionnalite",
     }
@@ -511,6 +537,52 @@ def build_method_modal_body(method):
     detail = method.get("detail", {})
     sections = []
 
+    if detail.get("kind") == "wh_parameter_model":
+        standard_request = detail.get("standard_request") or {}
+        sections.append(
+            f"""
+            <div class="method-modal-section">
+              <div class="math-label">1. Requête standardisée et annualisation</div>
+              <p>La requête standardisée retenue pour ce scénario est décrite par <code>{format_scalar(standard_request.get('input_tokens', 0), 0)}</code> tokens en entrée et <code>{format_scalar(standard_request.get('output_tokens', 0), 0)}</code> tokens en sortie.</p>
+              <p><code>{format_count(feature_uses_per_month)}</code> usages/mois × <code>{format_scalar(months_per_year, 0)}</code> mois × <code>{format_scalar(requests_per_feature, 0)}</code> appel(s) LLM/usage = <code>{format_count(annual_requests)}</code> appels LLM/an</p>
+            </div>
+            """
+        )
+        anchor_lines = []
+        for anchor in detail.get("anchors", []):
+            anchor_lines.append(
+                f"""
+                <li>
+                  <strong>{escape(anchor.get('source_model', 'source'))}</strong> :
+                  énergie observée <code>{escape(anchor.get('source_energy', 'n.d.'))}</code>,
+                  paramètres source <code>{format_scalar(anchor.get('source_params'))}B</code>,
+                  paramètres cible <code>{format_scalar(anchor.get('target_params'))}B</code>,
+                  facteur paramétrique <code>{format_scalar(anchor.get('parameter_factor'))}</code>,
+                  énergie extrapolée <code>{escape(format_range_display(anchor.get('per_request_energy', {'low':0,'high':0}), 'energy'))}</code>.
+                </li>
+                """
+            )
+        sections.append(
+            f"""
+            <div class="method-modal-section">
+              <div class="math-label">2. Calibration énergétique</div>
+              <p>Les ancrages énergétiques les plus proches en nombre de paramètres sont sélectionnés dans la littérature, puis mis à l'échelle sur le modèle cible.</p>
+              <ul class="extrapolation-list">{''.join(anchor_lines) or '<li>n.d.</li>'}</ul>
+            </div>
+            """
+        )
+        sections.append(
+            f"""
+            <div class="method-modal-section">
+              <div class="math-label">3. Dérivation CO2 et eau à partir du mix pays</div>
+              <p>Énergie par requête retenue : <code>{escape(method['energy'])}</code>.</p>
+              <p>Carbone: <code>Wh × {format_scalar(target_carbon)} gCO2e/kWh / 1000</code> appliqué à <strong>{escape(target_country)}</strong> = <code>{escape(method['carbon'])}</code>.</p>
+              <p>Eau: <code>Wh × {format_scalar(target_water)} L/kWh / 1000</code> appliqué à <strong>{escape(target_country)}</strong> = <code>{escape(method['water'])}</code>.</p>
+            </div>
+            """
+        )
+        return "".join(sections)
+
     sections.append(
         f"""
         <div class="method-modal-section">
@@ -554,7 +626,7 @@ def build_method_modal_body(method):
         f"""
         <div class="method-modal-section">
           <div class="math-label">2. Méthode des multiples sur les indicateurs {escape(unit_basis)}</div>
-          <p>Chaque indicateur scientifique disponible dans cette famille d'unités est recalculé pour le scénario cible, puis la méthode retient une moyenne centrale et une enveloppe min-max.</p>
+          <p>Chaque indicateur scientifique disponible dans cette famille d'unités est recalculé pour le scénario cible. Quand plusieurs ancrages existent, la méthode retient d'abord le modèle le plus proche en nombre de paramètres, puis construit la valeur centrale sur cet ancrage sélectionné.</p>
           <ul class="extrapolation-list">{''.join(anchor_lines) or '<li>n.d.</li>'}</ul>
         </div>
         """
@@ -986,12 +1058,18 @@ def render_market_models_table(records):
     rows = build_market_model_predictions(records)
     if not rows:
         return ""
-
     body = []
     for row in rows:
         parameter_title = escape(str(row.get("parameter_source", "") or "Source non précisée"))
         server_title = escape(str(row.get("server_country_source", "") or "Source non précisée"))
         estimation_title = escape(str(row.get("estimation_country_source", "") or "Source non précisée"))
+        method_map = row.get("method_results_by_id") or {}
+        prompt_method = method_map.get("prompt_query_average") or {}
+        page_method = method_map.get("page_average") or {}
+        prompt_energy = format_central_display(prompt_method.get("per_request_energy_wh", {}), "energy") if prompt_method else "n.d."
+        page_energy = format_central_display(page_method.get("per_request_energy_wh", {}), "energy") if page_method else "n.d."
+        prompt_carbon = format_central_display(prompt_method.get("annual_carbon_gco2e", {}), "carbon") if prompt_method else "n.d."
+        page_carbon = format_central_display(page_method.get("annual_carbon_gco2e", {}), "carbon") if page_method else "n.d."
         body.append(
             f"""
             <tr>
@@ -999,8 +1077,10 @@ def render_market_models_table(records):
               <td>{escape(format_market_parameter_display(row))}</td>
               <td>{escape(row.get('server_country', 'n.d.') or 'n.d.')}<div class="reference-locator">{escape(format_market_country_status(row.get('server_country_status')))}</div></td>
               <td>{escape(row.get('estimation_country_code', 'n.d.') or 'n.d.')}<div class="reference-locator">{escape(format_market_country_status(row.get('estimation_country_status')))}</div></td>
-              <td>{escape(format_range_display(row.get('per_request_energy_wh', {}), 'energy'))}</td>
-              <td>{escape(format_range_display(row.get('annual_carbon_gco2e', {}), 'carbon'))}</td>
+              <td>{escape(prompt_energy)}</td>
+              <td>{escape(page_energy)}</td>
+              <td>{escape(prompt_carbon)}</td>
+              <td>{escape(page_carbon)}</td>
               <td>
                 <div><a href="{escape(str(row.get('parameter_source_url', '') or '#'), quote=True)}" target="_blank" rel="noopener noreferrer" title="{parameter_title}">Paramètres</a></div>
                 <div><a href="{escape(str(row.get('server_country_source_url', '') or '#'), quote=True)}" target="_blank" rel="noopener noreferrer" title="{server_title}">Pays serveur</a></div>
@@ -1019,7 +1099,7 @@ def render_market_models_table(records):
         </div>
         <div class="summary-badge">Inférence standardisée</div>
       </div>
-      <p class="summary-intro">Le tableau ci-dessous compare les modèles suivis par le projet sur un scénario standardisé d'inférence: <strong>1 000 000 requêtes/an</strong>, <strong>1000 tokens en entrée</strong>, <strong>550 tokens en sortie</strong>, une requête LLM par usage. Les émissions affichées sont des estimations de screening produites à partir des indicateurs d'inférence de la littérature, avec contextualisation par le pays d'exécution retenu.</p>
+      <p class="summary-intro">Le tableau ci-dessous compare les modèles suivis par le projet sur un scénario standardisé d'inférence: <strong>1 000 000 requêtes/an</strong>, <strong>1000 tokens en entrée</strong>, <strong>550 tokens en sortie</strong>, une requête LLM par usage. Pour chaque modèle, l'application affiche séparément l'estimation dérivée de la moyenne <strong>Wh/prompt|requête</strong> et l'estimation dérivée de la moyenne <strong>Wh/page</strong>.</p>
       <div class="reference-table-wrap">
         <table class="reference-table">
           <thead>
@@ -1028,8 +1108,10 @@ def render_market_models_table(records):
               <th>Paramètres</th>
               <th>Pays serveur</th>
               <th>Pays retenu</th>
-              <th>Énergie / requête</th>
-              <th>Carbone / 1M requêtes</th>
+              <th>Énergie / prompt-réq</th>
+              <th>Énergie / page</th>
+              <th>Carbone / 1M prompt-réq</th>
+              <th>Carbone / 1M page</th>
               <th>Sources</th>
             </tr>
           </thead>
@@ -1115,6 +1197,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
             "parametric_extrapolation": "Extrapolation parametrique",
             "literature_proxy": "Proxy de litterature",
             "literature_multiples": "Agrégation multi-indicateurs d'inférence",
+            "wh_parameter_model": "Modèle unifié Wh -> paramètres",
         }.get(result.get("method"), "Methode non qualifiee")
         model_profile = result.get("model_profile") or {}
         country_mix = result.get("country_energy_mix") or {}

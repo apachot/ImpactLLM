@@ -99,7 +99,7 @@ def tool_definitions():
         },
         {
             "name": "predict_inference_externalities",
-            "description": "Predict annualized inference-only environmental externalities by averaging prompt-based and page-based literature indicators.",
+            "description": "Predict annualized inference-only environmental externalities using a unified Wh-based calibration from literature anchors, scaled by model size and country electricity mix.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -142,7 +142,7 @@ def tool_definitions():
         },
         {
             "name": "estimate_feature_externalities",
-            "description": "Estimate annualized inference-only environmental externalities for software using an LLM, using the same aggregated literature-based predictor.",
+            "description": "Estimate annualized inference-only environmental externalities for software using an LLM, using the unified Wh-based calibration predictor.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

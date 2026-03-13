@@ -517,6 +517,150 @@ def aggregate_method_ranges(methods):
     }
 
 
+def select_nearest_parameter_anchors(anchors, target_params):
+    if not anchors:
+        return [], "none"
+    if target_params in (None, 0):
+        return anchors, "average_all"
+
+    anchors_with_params = []
+    anchors_without_params = []
+    for anchor in anchors:
+        source_params = anchor.get("source_params")
+        if source_params in (None, 0):
+            anchors_without_params.append(anchor)
+            continue
+        distance = abs((target_params - source_params) / source_params)
+        enriched = dict(anchor)
+        enriched["parameter_distance"] = distance
+        anchors_with_params.append(enriched)
+
+    if not anchors_with_params:
+        return anchors, "average_all"
+
+    anchors_with_params.sort(key=lambda item: item["parameter_distance"])
+    nearest = anchors_with_params[0]
+    return [nearest], "nearest_parameter_anchor"
+
+
+def select_primary_inference_methods(methods, market_profile):
+    if not methods:
+        return [], "none"
+
+    method_by_id = {method.get("method_id"): method for method in methods}
+    market_status = str((market_profile or {}).get("market_status", "")).strip().lower()
+    serving_mode = str((market_profile or {}).get("serving_mode", "")).strip().lower()
+
+    if market_status == "api" or serving_mode == "closed":
+        if method_by_id.get("prompt_average"):
+            return [method_by_id["prompt_average"]], "primary_prompt_only"
+
+    if market_status in {"open_weight", "api_and_open_weight"} or serving_mode in {"open", "hybrid"}:
+        if method_by_id.get("page_average"):
+            return [method_by_id["page_average"]], "primary_page_only"
+
+    return methods, "average_all_methods"
+
+
+def build_empirical_unit_conversions(records):
+    conversions = {}
+    by_model = {}
+    for record in records:
+        if record.get("phase") != "inference":
+            continue
+        model = record.get("llm_normalized")
+        if not model or model == "n.d.":
+            continue
+        by_model.setdefault(model, []).append(record)
+
+    for model, rows in by_model.items():
+        prompt_energy = next((r for r in rows if r.get("metric_name") == "prompt_energy"), None)
+        page_energy = next((r for r in rows if r.get("metric_name") == "page_generation_energy"), None)
+        if not prompt_energy or not page_energy:
+            continue
+        try:
+            prompt_wh = to_float(prompt_energy.get("metric_value"), default=None)
+            page_wh = to_float(page_energy.get("metric_value"), default=None) * 1000.0
+        except ValueError:
+            continue
+        if prompt_wh in (None, 0) or page_wh in (None, 0):
+            continue
+        conversions[model] = {
+            "page_per_prompt_energy_ratio": page_wh / prompt_wh,
+            "prompt_per_page_energy_ratio": prompt_wh / page_wh,
+            "prompt_record_id": prompt_energy.get("record_id"),
+            "page_record_id": page_energy.get("record_id"),
+        }
+    return conversions
+
+
+def build_energy_inference_anchors(records):
+    anchors = []
+    for record in records:
+        if record.get("phase") != "inference":
+            continue
+        metric_name = record.get("metric_name")
+        if metric_name not in {"prompt_energy", "page_generation_energy", "query_energy"}:
+            continue
+        source_params_raw = str(record.get("model_parameters_normalized", "") or "").replace("B", "").strip()
+        if source_params_raw.lower() in {"", "n.d.", "nd", "na", "n/a"}:
+            continue
+        source_params = to_float(source_params_raw, default=None)
+        if source_params in (None, 0):
+            continue
+        energy_wh = None
+        unit = str(record.get("metric_unit", "") or "")
+        if metric_name == "prompt_energy":
+            energy_wh = to_float(record.get("metric_value"), default=None)
+        elif metric_name == "page_generation_energy":
+            energy_wh = to_float(record.get("metric_value"), default=None)
+            if energy_wh is not None:
+                energy_wh *= 1000.0
+        elif metric_name == "query_energy":
+            energy_wh = to_float(record.get("metric_value"), default=None)
+        if energy_wh in (None, 0):
+            continue
+        anchors.append(
+            {
+                "record_id": record.get("record_id"),
+                "source_model": record.get("llm_normalized") or record.get("model_or_scope"),
+                "source_country": record.get("country_normalized") or "Non spécifié",
+                "source_params": source_params,
+                "source_energy_wh": energy_wh,
+                "metric_name": metric_name,
+                "metric_unit": unit,
+                "source_energy": format_raw_metric(record.get("metric_value"), unit),
+            }
+        )
+    return anchors
+
+
+def get_anchor_family(metric_name):
+    if metric_name in {"prompt_energy", "query_energy"}:
+        return "prompt_query"
+    if metric_name == "page_generation_energy":
+        return "page"
+    return "other"
+
+
+def select_nearest_energy_anchors(anchors, target_params, limit=2):
+    if not anchors:
+        return []
+    if target_params in (None, 0):
+        return anchors[:limit]
+    enriched = []
+    for anchor in anchors:
+        source_params = anchor.get("source_params")
+        if source_params in (None, 0):
+            continue
+        distance = abs((target_params - source_params) / source_params)
+        entry = dict(anchor)
+        entry["parameter_distance"] = distance
+        enriched.append(entry)
+    enriched.sort(key=lambda item: item["parameter_distance"])
+    return enriched[:limit]
+
+
 def build_inference_method_set(records, payload):
     request_type = payload.get("request_type", "chat_generation")
     input_tokens = to_float(payload.get("input_tokens", 0.0), default=0.0)
@@ -540,23 +684,24 @@ def build_inference_method_set(records, payload):
         grid_carbon_intensity = to_float(country_mix.get("grid_carbon_intensity_gco2_per_kwh"), default=None)
     if water_intensity is None and country_mix:
         water_intensity = to_float(country_mix.get("water_intensity_l_per_kwh"), default=None)
+    standard_request = {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
 
-    token_ratio = compute_token_ratio(input_tokens, output_tokens)
-    total_tokens = input_tokens + output_tokens
-    page_ratio = (total_tokens / REFERENCE_PAGE_TOKENS) if total_tokens > 0 else (REFERENCE_PROMPT_TOKENS / REFERENCE_PAGE_TOKENS)
-
-    methods = []
     selected_factors = []
     assumptions = [
         "Inference-only estimate: training and software-system overheads excluded",
         f"Request type classified as {request_type}",
         f"{requests_per_feature} LLM request(s) per feature use",
         f"{annual_feature_uses} feature uses per year",
+        "Energy is treated as the primary quantity; carbon and water are derived from the electricity mix of the retained country",
     ]
     if target_params is not None:
         assumptions.append(f"Model-size scaling enabled with target profile at {target_params:g}B active parameters")
     else:
-        assumptions.append("No parameter count available for the target model; multiplicative scaling disabled")
+        assumptions.append("No parameter count available for the target model; parametric scaling disabled")
     if country_mix:
         if country_resolution == "publisher_country":
             assumptions.append(
@@ -570,181 +715,72 @@ def build_inference_method_set(records, payload):
             assumptions.append(
                 f"Country mix fallback applied for {country_mix.get('country_code')} ({country_mix.get('source_citation')})"
             )
+    energy_anchors = build_energy_inference_anchors(records)
+    methods = []
+    family_groups = {"prompt_query": [], "page": []}
+    for anchor in energy_anchors:
+        family = get_anchor_family(anchor.get("metric_name"))
+        if family in family_groups:
+            family_groups[family].append(anchor)
 
-    def add_method(
-        method_id,
-        label,
-        basis,
-        record_ids,
-        per_request_energy_wh,
-        per_request_carbon_g,
-        per_request_water_ml,
-        detail,
-    ):
-        annual_energy = rounded_range(
-            per_request_energy_wh["low"] * annual_requests,
-            per_request_energy_wh["central"] * annual_requests,
-            per_request_energy_wh["high"] * annual_requests,
-        )
-        annual_carbon = rounded_range(
-            per_request_carbon_g["low"] * annual_requests,
-            per_request_carbon_g["central"] * annual_requests,
-            per_request_carbon_g["high"] * annual_requests,
-        )
-        annual_water = rounded_range(
-            per_request_water_ml["low"] * annual_requests,
-            per_request_water_ml["central"] * annual_requests,
-            per_request_water_ml["high"] * annual_requests,
-        )
+    if family_groups["prompt_query"]:
+        assumptions.append("A prompt/query calibration is computed from the mean Wh per parameter observed in prompt/query inference records")
+    if family_groups["page"]:
+        assumptions.append("A page calibration is computed from the mean Wh per parameter observed in page-generation inference records")
+
+    for family_name, family_anchors in family_groups.items():
+        if not family_anchors:
+            continue
+        selected_factors.extend([anchor["record_id"] for anchor in family_anchors])
+        intensities = [anchor["source_energy_wh"] / anchor["source_params"] for anchor in family_anchors if anchor.get("source_params")]
+        if not intensities:
+            continue
+        mean_intensity = sum(intensities) / len(intensities)
+        target_energy_wh = (mean_intensity * target_params) if target_params not in (None, 0) else sum(anchor["source_energy_wh"] for anchor in family_anchors) / len(family_anchors)
+        target_carbon = wh_to_gco2e(target_energy_wh, grid_carbon_intensity) if grid_carbon_intensity is not None else 0.0
+        target_water = wh_to_liters(target_energy_wh, water_intensity) * 1000.0 if water_intensity is not None else 0.0
+        scaled_family_anchors = []
+        for anchor in family_anchors:
+            parameter_factor = (target_params / anchor["source_params"]) if (target_params not in (None, 0) and anchor.get("source_params") not in (None, 0)) else 1.0
+            scaled_family_anchors.append(
+                {
+                    **anchor,
+                    "target_params": target_params,
+                    "parameter_factor": parameter_factor,
+                    "per_request_energy": rounded_range(anchor["source_energy_wh"] * parameter_factor, anchor["source_energy_wh"] * parameter_factor, anchor["source_energy_wh"] * parameter_factor),
+                    "per_request_carbon": rounded_range(wh_to_gco2e(anchor["source_energy_wh"] * parameter_factor, grid_carbon_intensity) if grid_carbon_intensity is not None else 0.0, wh_to_gco2e(anchor["source_energy_wh"] * parameter_factor, grid_carbon_intensity) if grid_carbon_intensity is not None else 0.0, wh_to_gco2e(anchor["source_energy_wh"] * parameter_factor, grid_carbon_intensity) if grid_carbon_intensity is not None else 0.0),
+                    "per_request_water": rounded_range(wh_to_liters(anchor["source_energy_wh"] * parameter_factor, water_intensity) * 1000.0 if water_intensity is not None else 0.0, wh_to_liters(anchor["source_energy_wh"] * parameter_factor, water_intensity) * 1000.0 if water_intensity is not None else 0.0, wh_to_liters(anchor["source_energy_wh"] * parameter_factor, water_intensity) * 1000.0 if water_intensity is not None else 0.0),
+                    "source_carbon_intensity": None,
+                    "source_water_intensity": None,
+                }
+            )
+        method_id = "prompt_query_average" if family_name == "prompt_query" else "page_average"
         methods.append(
             {
                 "method_id": method_id,
-                "label": label,
-                "basis": basis,
-                "record_ids": dedupe(record_ids),
-                "annual_energy_wh": annual_energy,
-                "annual_carbon_gco2e": annual_carbon,
-                "annual_water_ml": annual_water,
-                "per_request_energy_wh": per_request_energy_wh,
-                "per_request_carbon_gco2e": per_request_carbon_g,
-                "per_request_water_ml": per_request_water_ml,
-                "detail": detail,
+                "label": "Moyenne Wh/prompt|requête" if family_name == "prompt_query" else "Moyenne Wh/page",
+                "basis": "Moyenne des intensités énergétiques Wh/paramètre calibrées sur les ancrages prompt/requête." if family_name == "prompt_query" else "Moyenne des intensités énergétiques Wh/paramètre calibrées sur les ancrages page.",
+                "record_ids": [anchor["record_id"] for anchor in family_anchors],
+                "annual_energy_wh": scale_range(rounded_range(target_energy_wh, target_energy_wh, target_energy_wh), annual_requests),
+                "annual_carbon_gco2e": scale_range(rounded_range(target_carbon, target_carbon, target_carbon), annual_requests),
+                "annual_water_ml": scale_range(rounded_range(target_water, target_water, target_water), annual_requests),
+                "per_request_energy_wh": rounded_range(target_energy_wh, target_energy_wh, target_energy_wh),
+                "per_request_carbon_gco2e": rounded_range(target_carbon, target_carbon, target_carbon),
+                "per_request_water_ml": rounded_range(target_water, target_water, target_water),
+                "detail": {
+                    "kind": "wh_parameter_model",
+                    "unit_basis": "Wh/prompt|requête" if family_name == "prompt_query" else "Wh/page",
+                    "anchors": scaled_family_anchors,
+                    "target_country": payload.get("country"),
+                    "target_mix": country_mix,
+                    "target_grid_carbon_intensity": grid_carbon_intensity,
+                    "target_water_intensity": water_intensity,
+                    "standard_request": standard_request,
+                    "aggregation": "mean_wh_per_parameter",
+                    "family": family_name,
+                    "mean_intensity_wh_per_billion": mean_intensity,
+                },
             }
-        )
-
-    prompt_energy = get_record(records, "elsworth2025_prompt_energy")
-    prompt_carbon = get_record(records, "elsworth2025_prompt_carbon")
-    prompt_water = get_record(records, "elsworth2025_prompt_water")
-    if prompt_energy:
-        source_params = to_float(prompt_energy.get("model_parameters_normalized", "").replace("B", ""), default=None)
-        param_ratio = (target_params / source_params) if (target_params is not None and source_params not in (None, 0)) else 1.0
-        source_energy_wh = to_float(prompt_energy["metric_value"]) * token_ratio * param_ratio
-        per_request_energy = rounded_range(source_energy_wh, source_energy_wh, source_energy_wh)
-        if grid_carbon_intensity is not None:
-            carbon_val = wh_to_gco2e(source_energy_wh, grid_carbon_intensity)
-            per_request_carbon = rounded_range(carbon_val, carbon_val, carbon_val)
-        elif prompt_carbon:
-            carbon_val = to_float(prompt_carbon["metric_value"]) * token_ratio
-            per_request_carbon = rounded_range(carbon_val, carbon_val, carbon_val)
-        else:
-            per_request_carbon = rounded_range(0.0, 0.0, 0.0)
-        if water_intensity is not None:
-            water_val = wh_to_liters(source_energy_wh, water_intensity) * 1000.0
-            per_request_water = rounded_range(water_val, water_val, water_val)
-        elif prompt_water:
-            water_val = to_float(prompt_water["metric_value"]) * token_ratio
-            per_request_water = rounded_range(water_val, water_val, water_val)
-        else:
-            per_request_water = rounded_range(0.0, 0.0, 0.0)
-        record_ids = ["elsworth2025_prompt_energy", "elsworth2025_prompt_carbon", "elsworth2025_prompt_water"]
-        selected_factors.extend(record_ids)
-        add_method(
-            "prompt_average",
-            "Méthode par prompt",
-            "Moyenne des indicateurs connus exprimés par prompt, recalculés pour le pays d'inférence",
-            record_ids,
-            per_request_energy,
-            per_request_carbon,
-            per_request_water,
-            {
-                "kind": "multiples",
-                "unit_basis": "prompt",
-                "ratio": token_ratio,
-                "anchors": [
-                    {
-                        "source_model": prompt_energy.get("llm_normalized") or prompt_energy.get("model_or_scope"),
-                        "source_country": prompt_energy.get("country_normalized") or "Non spécifié",
-                        "source_params": source_params,
-                        "target_params": target_params,
-                        "parameter_factor": param_ratio,
-                        "source_energy": format_raw_metric(prompt_energy["metric_value"], prompt_energy["metric_unit"]),
-                        "source_carbon": format_raw_metric(prompt_carbon["metric_value"], prompt_carbon["metric_unit"]) if prompt_carbon else None,
-                        "source_water": format_raw_metric(prompt_water["metric_value"], prompt_water["metric_unit"]) if prompt_water else None,
-                        "source_carbon_intensity": infer_source_intensity(prompt_energy, prompt_carbon, "carbon") if prompt_carbon else None,
-                        "source_water_intensity": infer_source_intensity(prompt_energy, prompt_water, "water") if prompt_water else None,
-                        "per_request_energy": rounded_range(source_energy_wh, source_energy_wh, source_energy_wh),
-                        "per_request_carbon": per_request_carbon,
-                        "per_request_water": per_request_water,
-                    }
-                ],
-                "target_country": payload.get("country"),
-                "target_mix": country_mix,
-                "target_grid_carbon_intensity": grid_carbon_intensity,
-                "target_water_intensity": water_intensity,
-            },
-        )
-
-    page_anchors = []
-    page_record_ids = []
-    for prefix in ("ren2024_gemma2b", "ren2024_llama70b"):
-        energy_record = get_record(records, f"{prefix}_energy")
-        carbon_record = get_record(records, f"{prefix}_carbon")
-        water_record = get_record(records, f"{prefix}_water")
-        if not energy_record:
-            continue
-        source_params = to_float(energy_record.get("model_parameters_normalized", "").replace("B", ""), default=None)
-        param_ratio = (target_params / source_params) if (target_params is not None and source_params not in (None, 0)) else 1.0
-        source_energy_wh = to_float(energy_record["metric_value"]) * 1000.0 * page_ratio * param_ratio
-        if grid_carbon_intensity is not None:
-            carbon_val = wh_to_gco2e(source_energy_wh, grid_carbon_intensity)
-            per_request_carbon = rounded_range(carbon_val, carbon_val, carbon_val)
-        elif carbon_record:
-            carbon_val = to_float(carbon_record["metric_value"]) * page_ratio
-            per_request_carbon = rounded_range(carbon_val, carbon_val, carbon_val)
-        else:
-            per_request_carbon = rounded_range(0.0, 0.0, 0.0)
-        if water_intensity is not None:
-            water_val = wh_to_liters(source_energy_wh, water_intensity) * 1000.0
-            per_request_water = rounded_range(water_val, water_val, water_val)
-        elif water_record:
-            water_val = to_float(water_record["metric_value"]) * 1000.0 * page_ratio
-            per_request_water = rounded_range(water_val, water_val, water_val)
-        else:
-            per_request_water = rounded_range(0.0, 0.0, 0.0)
-        anchor_record_ids = [f"{prefix}_energy", f"{prefix}_carbon", f"{prefix}_water"]
-        page_record_ids.extend(anchor_record_ids)
-        page_anchors.append(
-            {
-                "source_model": energy_record.get("llm_normalized") or energy_record.get("model_or_scope"),
-                "source_country": energy_record.get("country_normalized") or "Non spécifié",
-                "source_params": source_params,
-                "target_params": target_params,
-                "parameter_factor": param_ratio,
-                "source_energy": format_raw_metric(energy_record["metric_value"], energy_record["metric_unit"]),
-                "source_carbon": format_raw_metric(carbon_record["metric_value"], carbon_record["metric_unit"]) if carbon_record else None,
-                "source_water": format_raw_metric(water_record["metric_value"], water_record["metric_unit"]) if water_record else None,
-                "source_carbon_intensity": infer_source_intensity(energy_record, carbon_record, "carbon") if carbon_record else None,
-                "source_water_intensity": infer_source_intensity(energy_record, water_record, "water") if water_record else None,
-                "per_request_energy": rounded_range(source_energy_wh, source_energy_wh, source_energy_wh),
-                "per_request_carbon": per_request_carbon,
-                "per_request_water": per_request_water,
-            }
-        )
-    if page_anchors:
-        selected_factors.extend(page_record_ids)
-        def avg_range(anchors, key):
-            lows = [anchor[key]["low"] for anchor in anchors]
-            centrals = [anchor[key]["central"] for anchor in anchors]
-            highs = [anchor[key]["high"] for anchor in anchors]
-            return rounded_range(min(lows), sum(centrals) / len(centrals), max(highs))
-        add_method(
-            "page_average",
-            "Méthode par page",
-            "Moyenne des indicateurs connus exprimés par page, ajustés au volume de tokens puis recalculés pour le pays d'inférence",
-            page_record_ids,
-            avg_range(page_anchors, "per_request_energy"),
-            avg_range(page_anchors, "per_request_carbon"),
-            avg_range(page_anchors, "per_request_water"),
-            {
-                "kind": "multiples",
-                "unit_basis": "page",
-                "ratio": page_ratio,
-                "anchors": page_anchors,
-                "target_country": payload.get("country"),
-                "target_mix": country_mix,
-                "target_grid_carbon_intensity": grid_carbon_intensity,
-                "target_water_intensity": water_intensity,
-            },
         )
 
     aggregated = aggregate_method_ranges(methods)
@@ -769,9 +805,9 @@ def build_inference_method_set(records, payload):
     return {
         "scenario_id": payload.get("scenario_id", "inference-estimate"),
         "estimate_level": "inference_feature",
-        "method": "literature_multiples",
+        "method": "wh_parameter_model",
         "uncertainty_level": "high",
-        "applicability_note": "Inference-only screening estimate aggregated across multiple literature indicators.",
+        "applicability_note": "Inference-only screening estimate based on Wh calibration anchors from the literature and parametric scaling by model size.",
         "inputs": {
             "provider": payload.get("provider"),
             "model_id": payload.get("model_id"),
@@ -797,6 +833,8 @@ def build_inference_method_set(records, payload):
         "annual_llm": aggregated,
         "annual_total": aggregated,
         "method_results": methods,
+        "primary_method_results": methods,
+        "aggregation_strategy": "wh_parameter_model",
         "selected_factors": dedupe(selected_factors),
         "assumptions": assumptions,
         "country_energy_mix": country_mix,
@@ -1026,6 +1064,7 @@ def build_market_model_predictions(records):
                 "annual_energy_wh": estimate.get("annual_llm", {}).get("energy_wh", {}),
                 "annual_carbon_gco2e": estimate.get("annual_llm", {}).get("carbon_gco2e", {}),
                 "annual_water_ml": estimate.get("annual_llm", {}).get("water_ml", {}),
+                "method_results_by_id": {method.get("method_id"): method for method in estimate.get("method_results", [])},
                 "country_energy_mix": estimate.get("country_energy_mix") or {},
                 "selected_factors": estimate.get("selected_factors", []),
                 "assumptions": estimate.get("assumptions", []),
@@ -1036,11 +1075,7 @@ def build_market_model_predictions(records):
 
 
 def compute_token_ratio(input_tokens, output_tokens):
-    total_tokens = input_tokens + output_tokens
-    if total_tokens <= 0:
-        return 1.0
-    ratio = total_tokens / REFERENCE_PROMPT_TOKENS
-    return clamp(ratio, 0.25, 4.0)
+    return 1.0
 
 
 def clamp(value, low, high):
