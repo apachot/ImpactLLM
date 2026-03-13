@@ -658,6 +658,12 @@ def build_literature_catalog_rows():
             "li2025_chatbot_water",
             "strubell2019_co2_tuning_pipeline",
             "strubell2019_co2_nas",
+            "elsworth2025_efficiency_energy",
+            "elsworth2025_efficiency_carbon",
+            "elsworth2025_accelerator_energy",
+            "elsworth2025_cpu_dram_energy",
+            "elsworth2025_idle_energy",
+            "elsworth2025_datacenter_overhead",
         }:
             continue
         if "iea.org" in source_url or "publicpower.org" in source_url:
