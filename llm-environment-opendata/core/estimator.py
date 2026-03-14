@@ -865,6 +865,172 @@ def build_inference_method_set(records, payload):
         else:
             assumptions.append("Page-family method marked as not applicable for this scenario by the parser")
 
+    exact_market_profile = get_market_model_profile(payload.get("model_id"))
+    multifactor_profile = dict(exact_market_profile) if exact_market_profile else None
+    if not multifactor_profile and target_params not in (None, 0):
+        inferred_serving_mode = "closed" if country_resolution == "publisher_country" else "open"
+        multifactor_profile = {
+            "model_id": payload.get("model_id") or (model_profile or {}).get("model_id") or "unspecified-model",
+            "display_name": payload.get("model_id") or (model_profile or {}).get("model_id") or "unspecified-model",
+            "provider": payload.get("provider") or "",
+            "active_parameters_billion": target_params,
+            "total_parameters_billion": to_float((model_profile or {}).get("total_parameters_billion"), default=target_params) or target_params,
+            "serving_mode": inferred_serving_mode,
+            "context_window_tokens": payload.get("context_window_tokens") or 131072,
+            "vision_support": "no",
+            "architecture_notes": "Synthetic fallback profile built from the target model parameter estimate because no exact market-model profile is available.",
+            "estimation_country_code": (country_mix or {}).get("country_code") or payload.get("country") or "US",
+            "matching_strategy": "synthetic_parameter_profile",
+        }
+
+    if multifactor_profile:
+        multifactor_proxy = compute_market_screening_proxy(
+            multifactor_profile,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            requests_per_hour=None,
+        )
+        if multifactor_proxy:
+            selected_factors = dedupe(selected_factors + ["elsworth2025_prompt_energy"])
+            token_factors = {
+                scenario: round(market_token_factor(input_tokens, output_tokens, scenario=scenario), 4)
+                for scenario in ("low", "central", "high")
+            }
+            context_factors = {
+                scenario: round(market_context_factor(multifactor_profile.get("context_window_tokens"), scenario=scenario), 4)
+                for scenario in ("low", "central", "high")
+            }
+            serving_factors = {
+                scenario: round(market_serving_factor(multifactor_profile.get("serving_mode"), scenario=scenario), 4)
+                for scenario in ("low", "central", "high")
+            }
+            modality_factors = {
+                scenario: round(market_modality_factor(multifactor_profile, scenario=scenario), 4)
+                for scenario in ("low", "central", "high")
+            }
+            architecture_factors = {
+                scenario: round(market_architecture_factor(multifactor_profile, scenario=scenario), 4)
+                for scenario in ("low", "central", "high")
+            }
+            assumptions = [
+                "Inference-only estimate: training and software-system overheads excluded",
+                f"Request type classified as {request_type}",
+                f"{requests_per_feature} LLM request(s) per feature use",
+                f"{annual_feature_uses} feature uses per year",
+                "Energy is treated as the primary quantity; carbon is derived from the electricity mix of the retained country",
+                "Prompt-energy estimate calibrated on Elsworth et al. (2025) at 0.24 Wh/prompt for Gemini Apps",
+                "Weighted prompt compute uses input tokens + 1.8 x output tokens relative to the project reference scenario",
+                "Effective active parameters adjust the raw model size with context window, serving mode, modality support, and architecture overhead",
+            ]
+            if target_params is not None:
+                assumptions.append(f"Model-size scaling enabled with target profile at {target_params:g}B active parameters")
+            if exact_market_profile:
+                assumptions.append(f"Exact market-model profile retained for {multifactor_profile.get('model_id')}")
+            else:
+                assumptions.append("Exact market-model profile unavailable; synthetic multifactor fallback built from the target parameter estimate")
+            if country_mix:
+                if country_resolution == "publisher_country":
+                    assumptions.append(
+                        f"Carbon recalculated with the publisher-country mix for {country_mix.get('country_code')} because the model is treated as a proprietary hosted service"
+                    )
+                elif country_resolution == "project_country":
+                    assumptions.append(
+                        f"Carbon recalculated with the project country mix for {country_mix.get('country_code')} because the model is treated as open-weight or self-hosted"
+                    )
+                else:
+                    assumptions.append(
+                        f"Country mix fallback applied for {country_mix.get('country_code')} ({country_mix.get('source_citation')})"
+                    )
+
+            methods = [
+                {
+                    "method_id": multifactor_proxy["method_id"],
+                    "label": "Proxy prompt multi-facteurs",
+                    "basis": "Proxy de screening en énergie par prompt calibré sur Elsworth et al. (2025), puis ajusté par les paramètres actifs effectifs, les hypothèses de service, l’overhead d’architecture et un volume de tokens pondéré.",
+                    "record_ids": ["elsworth2025_prompt_energy"],
+                    "annual_energy_wh": scale_range(multifactor_proxy["per_request_energy_wh"], annual_requests),
+                    "annual_carbon_gco2e": scale_range(multifactor_proxy["per_request_carbon_gco2e"], annual_requests),
+                    "annual_water_ml": rounded_range(0.0, 0.0, 0.0),
+                    "per_request_energy_wh": multifactor_proxy["per_request_energy_wh"],
+                    "per_request_carbon_gco2e": multifactor_proxy["per_request_carbon_gco2e"],
+                    "per_request_water_ml": rounded_range(0.0, 0.0, 0.0),
+                    "detail": {
+                        "kind": "market_multifactor_prompt_proxy",
+                        "unit_basis": "Wh/prompt|request",
+                        "reference_anchor": multifactor_proxy["reference_anchor"],
+                        "standard_request": standard_request,
+                        "annual_multiplier": annual_requests,
+                        "target_country": payload.get("country"),
+                        "target_mix": country_mix,
+                        "target_grid_carbon_intensity": grid_carbon_intensity,
+                        "target_params": target_params,
+                        "effective_active_parameters_billion": multifactor_proxy["effective_active_parameters_billion"],
+                        "token_factor": token_factors,
+                        "context_factor": context_factors,
+                        "serving_factor": serving_factors,
+                        "modality_factor": modality_factors,
+                        "architecture_factor": architecture_factors,
+                        "serving_mode": multifactor_profile.get("serving_mode"),
+                        "context_window_tokens": multifactor_profile.get("context_window_tokens"),
+                        "vision_support": multifactor_profile.get("vision_support"),
+                        "architecture_notes": multifactor_profile.get("architecture_notes"),
+                        "matching_strategy": multifactor_profile.get("matching_strategy") or "exact_market_model",
+                        "scaling_exponent": {"low": 0.85, "central": 0.95, "high": 1.05},
+                    },
+                }
+            ]
+            primary_aggregated = aggregate_method_ranges(methods)
+            per_request_aggregate = {
+                "energy_wh": methods[0]["per_request_energy_wh"],
+                "carbon_gco2e": methods[0]["per_request_carbon_gco2e"],
+                "water_ml": rounded_range(0.0, 0.0, 0.0),
+            }
+            return {
+                "scenario_id": payload.get("scenario_id", "inference-estimate"),
+                "estimate_level": "inference_feature",
+                "method": multifactor_proxy["method_id"],
+                "uncertainty_level": "high",
+                "applicability_note": "Inference-only screening estimate based on a prompt-energy anchor and a multi-factor market-model proxy.",
+                "inputs": {
+                    "provider": payload.get("provider"),
+                    "model_id": payload.get("model_id"),
+                    "request_type": request_type,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "country": payload.get("country"),
+                    "effective_country": country_mix.get("country_code") if country_mix else None,
+                },
+                "feature_scope": {
+                    "requests_per_feature": requests_per_feature,
+                    "feature_uses_per_month": feature_uses_per_month,
+                    "months_per_year": months_per_year,
+                    "annual_feature_uses": annual_feature_uses,
+                    "annual_llm_requests": annual_requests,
+                    "pages_per_request_equivalent": pages_per_request_equivalent,
+                    "annual_page_equivalents": annual_page_equivalents,
+                },
+                "per_request_llm": per_request_aggregate,
+                "per_feature_llm": {
+                    "energy_wh": scale_range(per_request_aggregate["energy_wh"], requests_per_feature),
+                    "carbon_gco2e": scale_range(per_request_aggregate["carbon_gco2e"], requests_per_feature),
+                    "water_ml": rounded_range(0.0, 0.0, 0.0),
+                },
+                "annual_llm": primary_aggregated,
+                "annual_total": primary_aggregated,
+                "method_results": methods,
+                "primary_method_results": methods,
+                "aggregation_strategy": multifactor_proxy["method_id"],
+                "selected_factors": selected_factors,
+                "assumptions": assumptions,
+                "country_energy_mix": country_mix,
+                "country_resolution": country_resolution,
+                "model_profile": model_profile,
+                "market_model_profile": multifactor_profile,
+                "extrapolation_rules": [],
+                "extrapolation_details": {},
+                "software_overhead": {"components": [], "annual_energy_wh": 0.0, "annual_carbon_gco2e": 0.0, "annual_water_ml": 0.0},
+            }
+
     for family_name, family_anchors in family_groups.items():
         if not family_anchors:
             continue

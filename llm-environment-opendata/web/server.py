@@ -701,6 +701,13 @@ def humanize_assumption(text):
         "Page-family annualization uses generated page equivalents, with": "Page-family annualization uses generated page equivalents, with",
         "tokens per reference page when no explicit page count is provided": "tokens per reference page when no explicit page count is provided.",
         "Page-family method marked as not applicable for this scenario by the parser": "The page-family method was marked as not applicable for this scenario by the parser.",
+        "Prompt-energy estimate calibrated on Elsworth et al. (2025) at 0.24 Wh/prompt for Gemini Apps": "Prompt-energy estimate calibrated on Elsworth et al. (2025) at 0.24 Wh/prompt for Gemini Apps.",
+        "Weighted prompt compute uses input tokens + 1.8 x output tokens relative to the project reference scenario": "Weighted prompt compute uses input tokens + 1.8 x output tokens relative to the project reference scenario.",
+        "Effective active parameters adjust the raw model size with context window, serving mode, modality support, and architecture overhead": "Effective active parameters adjust the raw model size with context window, serving mode, modality support, and architecture overhead.",
+        "Exact market-model profile retained for": "Exact market-model profile retained for",
+        "Exact market-model profile unavailable; synthetic multifactor fallback built from the target parameter estimate": "Exact market-model profile unavailable; synthetic multifactor fallback built from the target parameter estimate.",
+        "Carbon recalculated with the publisher-country mix for": "Carbon is recalculated using the publisher-country electricity mix for",
+        "Carbon recalculated with the project country mix for": "Carbon is recalculated using the project-country electricity mix for",
     }
     for source, target in replacements.items():
         if source in value:
@@ -874,8 +881,11 @@ def translate_method_text(value):
     replacements = {
         "Proxy Wh/prompt|requête": "Wh/prompt|request proxy",
         "Proxy Wh/page": "Wh/page proxy",
+        "Proxy prompt multi-facteurs": "Multi-factor prompt proxy",
+        "Multi-factor prompt proxy": "Multi-factor prompt proxy",
         "Proxy paramétrique Wh/prompt|requête calibré sur les ancrages de la littérature, avec ajustement simple au volume de tokens.": "Parametric Wh/prompt|request proxy calibrated on literature anchors, with a simple token-volume adjustment.",
         "Proxy paramétrique Wh/page calibré sur les ancrages de génération de pages de la littérature.": "Parametric Wh/page proxy calibrated on literature page-generation anchors.",
+        "Proxy de screening en énergie par prompt calibré sur Elsworth et al. (2025), puis ajusté par les paramètres actifs effectifs, les hypothèses de service, l’overhead d’architecture et un volume de tokens pondéré.": "Prompt-energy screening proxy calibrated on Elsworth et al. (2025), then adjusted by effective active parameters, serving assumptions, architecture overhead, and weighted token volume.",
         "Wh/prompt|requête": "Wh/prompt|request",
     }
     for source, target in replacements.items():
@@ -1048,6 +1058,74 @@ def build_method_modal_body(method, analysis_refs=None):
               <p>The method starts from literature energy values published for the <code>{escape(detail.get('unit_basis', 'Wh'))}</code> family, then applies scaling by parameter count.</p>
               <ul class="extrapolation-list">{''.join(anchor_lines) or '<li>n.d.</li>'}</ul>
               <p>{'This family currently relies on a single literature anchor, so the displayed central value is a calibrated proxy rather than a cross-study average.' if int(detail.get('family_anchor_count', 0) or 0) == 1 else 'When several anchors exist in the same family, the engine computes an average energy intensity per billion parameters to obtain the central value shown in the result block.'}</p>
+            </div>
+            """
+        )
+        sections.append(
+            f"""
+            <div class="method-modal-section">
+              <div class="math-label">3. Carbon derivation from the country mix</div>
+              <p>Carbon is not reused directly from the literature. It is derived from extrapolated energy using the retained country electricity mix, here <strong>{escape(target_country)}</strong> {mix_ref}.</p>
+              <p>\\[
+              CO2_{{unitaire}} = \\frac{{E_{{unitaire}}}}{{1000}} \\times CI_c
+              \\]</p>
+              <p>Avec \\(CI_c = {format_scalar(target_carbon)}\\ \\text{{gCO2e/kWh}}\\) {mix_ref}.</p>
+              <p>The unit result retained for this method then leads to the following annualized values: energy <code>{escape(method['energy'])}</code> and carbon <code>{escape(method['carbon'])}</code>.</p>
+            </div>
+            <div class="method-modal-section">
+              <div class="math-label">4. Final annualization</div>
+              <p>The final annual projection is based on <code>{format_count(annual_multiplier)}</code> inference unit(s) per year.</p>
+              <p>\\[
+              Impact_{{annuel}} = Impact_{{unitaire}} \\times N_{{annuel}}
+              \\]</p>
+            </div>
+            """
+        )
+        return "".join(sections)
+
+    if detail.get("kind") == "market_multifactor_prompt_proxy":
+        standard_request = detail.get("standard_request") or {}
+        effective_params = detail.get("effective_active_parameters_billion") or {}
+        token_factor = detail.get("token_factor") or {}
+        context_factor = detail.get("context_factor") or {}
+        serving_factor = detail.get("serving_factor") or {}
+        modality_factor = detail.get("modality_factor") or {}
+        architecture_factor = detail.get("architecture_factor") or {}
+        scaling_exponent = detail.get("scaling_exponent") or {}
+        annual_multiplier = detail.get("annual_multiplier", annual_requests)
+        literature_ref = render_analysis_entry_ref("elsworth2025_prompt_energy", analysis_refs)
+        sections.append(
+            f"""
+            <div class="method-modal-section">
+              <div class="math-label">1. Scenario input data</div>
+              <p>The interpreted scenario uses <code>{format_scalar(standard_request.get('input_tokens', 0), 0)}</code> input tokens and <code>{format_scalar(standard_request.get('output_tokens', 0), 0)}</code> output tokens per call.</p>
+              <p>The annual call volume is calculated as:</p>
+              <p>\\[
+              N_{{appels/an}} = {format_count(feature_uses_per_month)} \\times {format_scalar(months_per_year, 0)} \\times {format_scalar(requests_per_feature, 0)} = {format_count(annual_requests)}
+              \\]</p>
+              <p>In this method, one LLM request remains the base inference unit, then the prompt-energy anchor is adjusted with weighted token volume and multi-factor effective parameters.</p>
+            </div>
+            """
+        )
+        sections.append(
+            f"""
+            <div class="method-modal-section">
+              <div class="math-label">2. Prompt anchor and multi-factor extrapolation</div>
+              <p>Observed literature anchor: <code>{escape(detail.get('reference_anchor', '0.24 Wh/prompt'))}</code> {literature_ref}</p>
+              <p>Target raw parameter count: <code>{format_scalar(detail.get('target_params'))}B</code> {parameter_ref}</p>
+              <p>Central effective active parameters:</p>
+              <p>\\[
+              P^{{eff}}_c = P_t \\times F_{{ctx}} \\times F_{{srv}} \\times F_{{mod}} \\times F_{{arch}} = {format_scalar(detail.get('target_params'))} \\times {format_scalar(context_factor.get('central'))} \\times {format_scalar(serving_factor.get('central'))} \\times {format_scalar(modality_factor.get('central'))} \\times {format_scalar(architecture_factor.get('central'))} = {format_scalar(effective_params.get('central'))}
+              \\]</p>
+              <p>Central token factor:</p>
+              <p>\\[
+              F_{{tok,c}} = {format_scalar(token_factor.get('central'), 4)}
+              \\]</p>
+              <p>Central per-request energy:</p>
+              <p>\\[
+              E_c = 0.24 \\times \\left(\\frac{{{format_scalar(effective_params.get('central'))}}}{{180}}\\right)^{{{format_scalar(scaling_exponent.get('central'), 2)}}} \\times {format_scalar(token_factor.get('central'), 4)} = {escape(format_range_display(method.get('detail', {}).get('per_request_energy_wh', method.get('per_request_energy_wh', {'low': 0, 'central': 0, 'high': 0})), 'energy'))}
+              \\]</p>
+              <p>The displayed range widens the scaling exponent and the contextual overhead factors between low, central, and high scenarios.</p>
             </div>
             """
         )
@@ -2385,20 +2463,20 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         </div>
         <div class="summary-body">
           <p><strong>1. Source-linked literature anchors.</strong></p>
-          <p>The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core is calibrated on Elsworth et al. (2025), which reports a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps.</p>
+          <p data-i18n-html="method-anchor-body">The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core is calibrated on Elsworth et al. (2025), which reports a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps.</p>
 
           <p><strong>2. A multi-factor effective-parameter proxy.</strong></p>
-          <p>When direct telemetry is unavailable for a target model, ImpactLLM does not rely on a raw parameter multiple alone. It builds an effective active-parameter profile from the retained model characteristics: active parameters, context window, serving mode (<code>open</code>, <code>hybrid</code>, <code>closed</code>), modality support, and architecture notes such as MoE or reasoning-oriented overheads.</p>
+          <p data-i18n-html="method-proxy-body">When direct telemetry is unavailable for a target model, ImpactLLM does not rely on a raw parameter multiple alone. It builds an effective active-parameter profile from the retained model characteristics: active parameters, context window, serving mode (<code>open</code>, <code>hybrid</code>, <code>closed</code>), modality support, and architecture notes such as MoE or reasoning-oriented overheads.</p>
 
           <p><strong>3. Token volume remains explicit.</strong></p>
-          <p>The current proxy adjusts the anchor with a weighted prompt-compute volume defined from input and output tokens. Output generation is weighted more heavily than input processing, so output-heavy scenarios and repeated LLM calls raise the estimate materially.</p>
-          <p>The current prompt-level branch is a screening proxy, not an audited benchmark. For this reason, the application returns a bounded low-central-high result rather than one falsely precise deterministic value.</p>
+          <p data-i18n-html="method-tokens-body">The current proxy adjusts the anchor with a weighted prompt-compute volume defined from input and output tokens. Output generation is weighted more heavily than input processing, so output-heavy scenarios and repeated LLM calls raise the estimate materially.</p>
+          <p data-i18n-html="method-bound-body">The current prompt-level branch is a screening proxy, not an audited benchmark. For this reason, the application returns a bounded low-central-high result rather than one falsely precise deterministic value.</p>
 
           <p><strong>4. Carbon derived from context.</strong></p>
-          <p>Carbon is not copied mechanically from the source paper. It is recalculated from the retained energy estimate using the electricity mix associated with the selected country context.</p>
+          <p data-i18n-html="method-carbon-body">Carbon is not copied mechanically from the source paper. It is recalculated from the retained energy estimate using the electricity mix associated with the selected country context.</p>
 
           <p><strong>5. A research-oriented estimator.</strong></p>
-          <p>The result is an auditable estimate intended for comparison, software design, and methodological discussion. It is useful precisely because the assumptions, factors, and retained sources remain visible and inspectable.</p>
+          <p data-i18n-html="method-research-body">The result is an auditable estimate intended for comparison, software design, and methodological discussion. It is useful precisely because the assumptions, factors, and retained sources remain visible and inspectable.</p>
 
           <p><strong>Scientific paper.</strong> <a href="{app_url('/downloads/llm_environment_opendata_paper.pdf')}">Download the PDF</a></p>
           <a class="paper-preview-card" href="{app_url('/downloads/llm_environment_opendata_paper.pdf')}" target="_blank" rel="noopener noreferrer" aria-label="Open the scientific paper PDF">
@@ -2454,6 +2532,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
             "literature_proxy": "Literature proxy",
             "literature_multiples": "Multi-indicator inference aggregation",
             "wh_parameter_model": "Unified Wh -> parameters model",
+            "market_multifactor_prompt_proxy_v1": "Market multi-factor prompt proxy",
         }.get(result.get("method"), "Unqualified method")
         model_profile = result.get("model_profile") or {}
         country_mix = result.get("country_energy_mix") or {}
@@ -3640,6 +3719,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         comparisonTrainingSuffix: ' indicator.',
         modelsAriaLabel: 'Comparative chart of models',
         trainingAriaLabel: 'Comparative chart of training impacts',
+        methodAnchorBody: 'The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core is calibrated on Elsworth et al. (2025), which reports a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps.',
+        methodProxyBody: 'When direct telemetry is unavailable for a target model, ImpactLLM does not rely on a raw parameter multiple alone. It builds an effective active-parameter profile from the retained model characteristics: active parameters, context window, serving mode (<code>open</code>, <code>hybrid</code>, <code>closed</code>), modality support, and architecture notes such as MoE or reasoning-oriented overheads.',
+        methodTokensBody: 'The current proxy adjusts the anchor with a weighted prompt-compute volume defined from input and output tokens. Output generation is weighted more heavily than input processing, so output-heavy scenarios and repeated LLM calls raise the estimate materially.',
+        methodBoundBody: 'The current prompt-level branch is a screening proxy, not an audited benchmark. For this reason, the application returns a bounded low-central-high result rather than one falsely precise deterministic value.',
+        methodCarbonBody: 'Carbon is not copied mechanically from the source paper. It is recalculated from the retained energy estimate using the electricity mix associated with the selected country context.',
+        methodResearchBody: 'The result is an auditable estimate intended for comparison, software design, and methodological discussion. It is useful precisely because the assumptions, factors, and retained sources remain visible and inspectable.',
         examplePrompt1: 'We have a customer-support assistant based on GPT-4o-mini, used about 4,000 times per month in France by our support team.',
         examplePrompt2: 'We use Claude 3.5 Sonnet in our app to summarize internal documents for around 120 consultants, with about 15,000 summaries generated per month.',
         examplePrompt3: 'We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.',
@@ -3667,6 +3752,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         comparisonTrainingSuffix: '.',
         modelsAriaLabel: 'Graphique comparatif des modèles',
         trainingAriaLabel: 'Graphique comparatif des impacts d’entraînement',
+        methodAnchorBody: 'L’estimateur au niveau applicatif part d’indicateurs d’inférence publiés, reliés à une source, un modèle, une géographie et un périmètre système explicites. Dans la version actuelle pour les modèles du marché, le cœur prédictif est calibré sur Elsworth et al. (2025), qui rapporte une énergie médiane de <code>0.24 Wh/prompt</code> pour Gemini Apps.',
+        methodProxyBody: 'Quand aucune télémétrie directe n’est disponible pour un modèle cible, ImpactLLM ne repose pas uniquement sur un multiple brut de paramètres. Il construit un profil en paramètres actifs effectifs à partir des caractéristiques retenues du modèle : paramètres actifs, fenêtre de contexte, mode de service (<code>open</code>, <code>hybrid</code>, <code>closed</code>), support multimodal et notes d’architecture comme le MoE ou des surcoûts liés au raisonnement.',
+        methodTokensBody: 'Le proxy actuel ajuste l’ancrage avec un volume de calcul par prompt pondéré, défini à partir des tokens d’entrée et de sortie. La génération de sortie est plus fortement pondérée que le traitement de l’entrée, de sorte que les scénarios riches en sortie et les appels LLM répétés augmentent sensiblement l’estimation.',
+        methodBoundBody: 'La branche actuelle au niveau prompt est un proxy de screening, pas un benchmark audité. Pour cette raison, l’application renvoie un résultat borné bas-central-haut plutôt qu’une valeur déterministe faussement précise.',
+        methodCarbonBody: 'Le carbone n’est pas repris mécaniquement depuis l’article source. Il est recalculé à partir de l’estimation énergétique retenue en utilisant le mix électrique associé au contexte pays sélectionné.',
+        methodResearchBody: 'Le résultat est une estimation auditable destinée à la comparaison, à la conception logicielle et à la discussion méthodologique. Son intérêt vient précisément du fait que les hypothèses, les facteurs et les sources retenues restent visibles et inspectables.',
         examplePrompt1: 'Nous avons un assistant de support client basé sur GPT-4o-mini, utilisé environ 4 000 fois par mois en France par notre équipe support.',
         examplePrompt2: 'Nous utilisons Claude 3.5 Sonnet dans notre application pour résumer des documents internes pour environ 120 consultants, avec près de 15 000 résumés générés par mois.',
         examplePrompt3: 'Nous avons un assistant RAG basé sur Mistral Large, avec une base vectorielle et de la journalisation, utilisé par environ 800 collaborateurs et traitant près de 25 000 requêtes par mois.',
@@ -3736,6 +3827,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Retained scope: only LLM inference externalities are included. Model training, software-system consumption, and ancillary infrastructure are excluded from the displayed estimate.', 'Périmètre retenu : seules les externalités d’inférence du LLM sont incluses. L’entraînement du modèle, la consommation du système logiciel et l’infrastructure annexe sont exclus de l’estimation affichée.'],
       ['Retained assumptions', 'Hypothèses retenues'],
       ['Inference-only estimate: training and software-system overheads excluded', 'Estimation limitée à l’inférence : entraînement et surcoûts du système logiciel exclus'],
+      ['Market multi-factor prompt proxy', 'Proxy prompt multi-facteurs du marché'],
+      ['Multi-factor prompt proxy', 'Proxy prompt multi-facteurs'],
+      ['Prompt-energy screening proxy calibrated on Elsworth et al. (2025), then adjusted by effective active parameters, serving assumptions, architecture overhead, and weighted token volume.', 'Proxy de screening en énergie par prompt calibré sur Elsworth et al. (2025), puis ajusté par les paramètres actifs effectifs, les hypothèses de service, l’overhead d’architecture et un volume de tokens pondéré.'],
+      ['Prompt-energy estimate calibrated on Elsworth et al. (2025) at 0.24 Wh/prompt for Gemini Apps.', 'Estimation en énergie par prompt calibrée sur Elsworth et al. (2025) à 0.24 Wh/prompt pour Gemini Apps.'],
+      ['Weighted prompt compute uses input tokens + 1.8 x output tokens relative to the project reference scenario.', 'Le calcul pondéré par prompt utilise les tokens d’entrée + 1.8 x les tokens de sortie par rapport au scénario de référence du projet.'],
+      ['Effective active parameters adjust the raw model size with context window, serving mode, modality support, and architecture overhead.', 'Les paramètres actifs effectifs ajustent la taille brute du modèle avec la fenêtre de contexte, le mode de service, le support multimodal et l’overhead d’architecture.'],
+      ['Exact market-model profile retained for', 'Profil exact du modèle marché retenu pour'],
+      ['Exact market-model profile unavailable; synthetic multifactor fallback built from the target parameter estimate.', 'Profil exact du modèle marché indisponible ; fallback multifactoriel synthétique construit à partir de l’estimation des paramètres cible.'],
       ['Request type classified as chat_generation', 'Type de requête classé comme chat_generation'],
       ['1 LLM request(s) per feature use', '1 requête LLM par usage de fonctionnalité'],
       ['feature uses per year', 'usages de fonctionnalité par an'],
@@ -3835,6 +3934,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['[data-tab-target="home"]', 'aria-label', 'homeAriaLabel'],
       ['.language-label', 'textContent', 'languageLabel'],
     ];
+    const htmlTranslations = [
+      ['[data-i18n-html="method-anchor-body"]', 'methodAnchorBody'],
+      ['[data-i18n-html="method-proxy-body"]', 'methodProxyBody'],
+      ['[data-i18n-html="method-tokens-body"]', 'methodTokensBody'],
+      ['[data-i18n-html="method-bound-body"]', 'methodBoundBody'],
+      ['[data-i18n-html="method-carbon-body"]', 'methodCarbonBody'],
+      ['[data-i18n-html="method-research-body"]', 'methodResearchBody'],
+    ];
     const benchmarkLabelMap = {{
       'Lampe fluorescente 1 h': 'Fluorescent lamp 1 h',
       'Ordinateur portable 1 h': 'Laptop 1 h',
@@ -3888,6 +3995,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       document.title = locale.title;
       document.documentElement.lang = lang;
     }}
+    function applyHtmlTranslations(lang) {{
+      const locale = uiText[lang];
+      htmlTranslations.forEach(([selector, key]) => {{
+        const element = document.querySelector(selector);
+        if (!element) return;
+        element.innerHTML = locale[key];
+      }});
+    }}
     function updateExamplePrompts(lang) {{
       const locale = uiText[lang] || uiText.en;
       const prompts = [locale.examplePrompt1, locale.examplePrompt2, locale.examplePrompt3];
@@ -3933,6 +4048,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }});
       safeStorageSet(LANGUAGE_STORAGE_KEY, normalized);
       applyAttributeTranslations(normalized);
+      applyHtmlTranslations(normalized);
       updateExamplePrompts(normalized);
       applyTextTranslations(normalized);
       renderModelsChart();
