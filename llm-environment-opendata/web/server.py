@@ -1118,7 +1118,7 @@ def build_method_modal_body(method, analysis_refs=None):
               <p>\\[
               P^{{eff}}_c = P_t \\times F_{{ctx}} \\times F_{{srv}} \\times F_{{mod}} \\times F_{{arch}} = {format_scalar(detail.get('target_params'))} \\times {format_scalar(context_factor.get('central'))} \\times {format_scalar(serving_factor.get('central'))} \\times {format_scalar(modality_factor.get('central'))} \\times {format_scalar(architecture_factor.get('central'))} = {format_scalar(effective_params.get('central'))}
               \\]</p>
-              <p>Where <code>P^{{eff}}_c</code> is the central effective active-parameter proxy, <code>P_t</code> the retained raw active-parameter count, <code>F_{{ctx}}</code> the context-window factor, <code>F_{{srv}}</code> the serving-mode factor, <code>F_{{mod}}</code> the modality factor, and <code>F_{{arch}}</code> the architecture-overhead factor.</p>
+              <p>Where <code>P_eff,c</code> is the central effective active-parameter proxy, <code>P_t</code> the retained raw active-parameter count, <code>F_ctx</code> the context-window factor, <code>F_srv</code> the serving-mode factor, <code>F_mod</code> the modality factor, and <code>F_arch</code> the architecture-overhead factor.</p>
               <p>Central token factor:</p>
               <p>\\[
               F_{{tok,c}} = {format_scalar(token_factor.get('central'), 4)}
@@ -1263,11 +1263,11 @@ def render_method_comparisons(methods):
           </div>
           <p class="result-method-basis">{escape(method['basis'])}</p>
           <div class="result-method-metrics">
-            <div class="result-method-metric">
+            <div class="result-method-metric result-method-metric-energy">
               <span class="result-method-label">Annual energy</span>
               <strong>{escape(method['energy'])}</strong>
             </div>
-            <div class="result-method-metric">
+            <div class="result-method-metric result-method-metric-carbon">
               <span class="result-method-label">Annual carbon</span>
               <strong>{escape(method['carbon'])}</strong>
             </div>
@@ -2903,10 +2903,18 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       gap: 1rem;
     }}
     .result-method-metric {{
-      padding: 0.15rem 0;
-      border: 0;
-      border-radius: 0.2rem;
+      padding: 0.8rem 0.95rem;
+      border: 1px solid var(--line);
+      border-radius: 0.75rem;
       background: #fff;
+    }}
+    .result-method-metric-energy {{
+      background: #eef8f1;
+      border-color: #b7dcc1;
+    }}
+    .result-method-metric-carbon {{
+      background: #fff1ef;
+      border-color: #efc2bb;
     }}
     .result-method-label {{
       display: block;
@@ -2916,9 +2924,21 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       text-transform: none;
       letter-spacing: 0.01em;
     }}
+    .result-method-metric-energy .result-method-label {{
+      color: #276749;
+    }}
+    .result-method-metric-carbon .result-method-label {{
+      color: #b54736;
+    }}
     .result-method-metric strong {{
       font-size: 1rem;
       line-height: 1.45;
+    }}
+    .result-method-metric-energy strong {{
+      color: #1f5139;
+    }}
+    .result-method-metric-carbon strong {{
+      color: #8f2f22;
     }}
     .result-method-actions {{
       margin-top: 0.9rem;
