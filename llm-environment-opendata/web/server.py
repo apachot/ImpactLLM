@@ -2047,8 +2047,8 @@ def render_market_models_table(records):
         <button type="button" class="chart-tab-button" data-model-chart-control="metric-tab" data-metric-value="carbon" aria-selected="false">Carbon</button>
       </div>
       <div id="models-impact-chart" class="models-impact-chart" data-chart-rows='{escape(json.dumps(chart_rows, ensure_ascii=False), quote=True)}'></div>
-      <p class="summary-intro">The chart below shows the estimated central values for all catalog models under a standardized inference scenario corresponding to <strong>1 hour of active use</strong>: <strong>{requests_per_hour} interactions/hour</strong>, <strong>1000 input tokens</strong>, <strong>550 output tokens</strong>, and one LLM request per use. The hourly pace is derived from an average reading speed of <strong>{reading_wpm} words/min</strong> (<a href="https://www.sciencedirect.com/science/article/pii/S0749596X19300786" target="_blank" rel="noopener noreferrer">Brysbaert, 2019</a>) and a project convention of <strong>1 token ≈ {words_per_token} word</strong>.</p>
-      <p class="summary-intro models-benchmark-note">Benchmarks integrated into the chart, all expressed over one hour or rescaled to a comparable order of magnitude: household electricity from <a href="https://www.extension.purdue.edu/extmedia/4H/4-H-1015-W.pdf" target="_blank" rel="noopener noreferrer">Purdue Extension</a> measurements (fluorescent lamp ≈ 9.3 Wh over 1 h; laptop ≈ 32 Wh over 1 h) and a 1500 W electric space heater rescaled here to 11 minutes to obtain ≈ 275 Wh; for carbon, a 10-minute electric-heater benchmark recalculated with the <a href="https://ember-energy.org/latest-insights/us-electricity-2025-special-report/insight-4-rising-demand-pushes-up-emissions-slight/" target="_blank" rel="noopener noreferrer">US electricity mix retained by the project</a> (0.25 kWh × 384 gCO2e/kWh ≈ 96 gCO2e), closer to the order of magnitude of the highest models in the inference scenario.</p>
+      <p class="summary-intro models-chart-note">The chart below shows the estimated central values for all catalog models under a standardized inference scenario corresponding to <strong>1 hour of active use</strong>: <strong>{requests_per_hour} interactions/hour</strong>, <strong>1000 input tokens</strong>, <strong>550 output tokens</strong>, and one LLM request per use. The hourly pace is derived from an average reading speed of <strong>{reading_wpm} words/min</strong> (<a href="https://www.sciencedirect.com/science/article/pii/S0749596X19300786" target="_blank" rel="noopener noreferrer">Brysbaert, 2019</a>) and a project convention of <strong>1 token ≈ {words_per_token} word</strong>.</p>
+      <p class="summary-intro models-chart-note models-benchmark-note">Benchmarks integrated into the chart, all expressed over one hour or rescaled to a comparable order of magnitude: household electricity from <a href="https://www.extension.purdue.edu/extmedia/4H/4-H-1015-W.pdf" target="_blank" rel="noopener noreferrer">Purdue Extension</a> measurements (fluorescent lamp ≈ 9.3 Wh over 1 h; laptop ≈ 32 Wh over 1 h) and a 1500 W electric space heater rescaled here to 11 minutes to obtain ≈ 275 Wh; for carbon, a 10-minute electric-heater benchmark recalculated with the <a href="https://ember-energy.org/latest-insights/us-electricity-2025-special-report/insight-4-rising-demand-pushes-up-emissions-slight/" target="_blank" rel="noopener noreferrer">US electricity mix retained by the project</a> (0.25 kWh × 384 gCO2e/kWh ≈ 96 gCO2e), closer to the order of magnitude of the highest models in the inference scenario.</p>
     </section>
     <section class="panel reference-panel">
       <div class="summary-header">
@@ -2448,17 +2448,17 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       <form class="panel" method="post" action="{app_url('/')}" id="estimate-form">
         <label for="description">Describe your application in natural language to obtain an inference estimate, its assumptions, and its source-linked calculation details.</label>
         <textarea id="description" name="description" placeholder="Describe your AI-enabled application in natural language...">{escape(description)}</textarea>
-        <div class="example-prompts" aria-label="Application examples">
-          <p class="example-prompts-label">Examples</p>
-          <button type="button" class="example-prompt" data-example-prompt="We have a customer-support assistant based on GPT-4o-mini, used about 4,000 times per month in France by our support team.">We have a customer-support assistant based on GPT-4o-mini, used about 4,000 times per month in France by our support team.</button>
-          <button type="button" class="example-prompt" data-example-prompt="We use Claude 3.5 Sonnet in our app to summarize internal documents for around 120 consultants, with about 15,000 summaries generated per month.">We use Claude 3.5 Sonnet in our app to summarize internal documents for around 120 consultants, with about 15,000 summaries generated per month.</button>
-          <button type="button" class="example-prompt" data-example-prompt="We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.">We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.</button>
-        </div>
         <button type="submit" id="submit-button">
           <span class="spinner" aria-hidden="true"></span>
           <span class="default-text">Estimate application</span>
           <span class="loading-text">Estimating...</span>
         </button>
+        <div class="example-prompts" aria-label="Application examples">
+          <p class="example-prompts-label">Click an example to test it</p>
+          <button type="button" class="example-prompt" data-example-prompt="We have a customer-support assistant based on GPT-4o-mini, used about 4,000 times per month in France by our support team.">We have a customer-support assistant based on GPT-4o-mini, used about 4,000 times per month in France by our support team.</button>
+          <button type="button" class="example-prompt" data-example-prompt="We use Claude 3.5 Sonnet in our app to summarize internal documents for around 120 consultants, with about 15,000 summaries generated per month.">We use Claude 3.5 Sonnet in our app to summarize internal documents for around 120 consultants, with about 15,000 summaries generated per month.</button>
+          <button type="button" class="example-prompt" data-example-prompt="We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.">We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.</button>
+        </div>
       </form>
       <div id="results-anchor">
         {result_methods_block}
@@ -3237,10 +3237,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       padding: 0.45rem 0.5rem;
       min-height: 480px;
     }}
+    .models-chart-note {{
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }}
     .models-benchmark-note {{
       margin-top: 1rem;
-      font-size: 0.92rem;
-      line-height: 1.65;
       color: var(--muted);
     }}
     .models-impact-chart svg {{
@@ -3530,7 +3532,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         homeAriaLabel: 'Home',
         languageLabel: 'Language',
         estimatePlaceholder: 'Describe your AI-enabled application in natural language...',
-        examplePromptsLabel: 'Examples',
+        examplePromptsLabel: 'Click an example to test it',
         marketSearchPlaceholder: 'Example: GPT, Claude, Mistral, US, 70B',
         trainingSearchPlaceholder: 'Example: GPT, Claude, 70B, Meta',
         noData: 'No data available for this selection.',
@@ -3557,7 +3559,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         homeAriaLabel: 'Accueil',
         languageLabel: 'Langue',
         estimatePlaceholder: 'Décrivez votre application intégrant de l’IA en langage naturel...',
-        examplePromptsLabel: 'Exemples',
+        examplePromptsLabel: 'Cliquez sur un exemple pour le tester',
         marketSearchPlaceholder: 'Exemple : GPT, Claude, Mistral, US, 70B',
         trainingSearchPlaceholder: 'Exemple : GPT, Claude, 70B, Meta',
         noData: 'Aucune donnée disponible pour cette sélection.',
