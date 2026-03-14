@@ -2372,7 +2372,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     <section class="tab-panel" id="tab-contact-panel" data-tab-panel="contact">
       <section class="panel reference-panel">
         <div class="summary-body">
-          <p>Nous travaillons sur l’IA responsable avec un accent mis sur la rigueur méthodologique, la traçabilité et l’aide à la décision dans des contextes réels. Notre travail combine recherche scientifique, conception produit et déploiement opérationnel pour rendre les systèmes d’IA plus transparents, plus responsables et plus utiles en pratique.</p>
+          <p>We work on responsible AI with a focus on methodological rigor, traceability, and real-world decision support. Our work combines scientific research, product design, and operational deployment to make AI systems more transparent, more accountable, and more useful in practice.</p>
           <p><strong>How to cite ImpactLLM</strong></p>
           <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 12). <em><a href="{app_url('/downloads/llm_environment_opendata_paper.pdf')}">ImpactLLM: An open tool for exploring and estimating the environmental footprint of large language models.</a></em></p>
           <p><strong>BibTeX</strong></p>
