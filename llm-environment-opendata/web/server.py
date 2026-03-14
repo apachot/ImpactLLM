@@ -3617,7 +3617,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         homeAriaLabel: 'Accueil',
         languageLabel: 'Langue',
         estimatePlaceholder: 'Décrivez votre application intégrant de l’IA en langage naturel...',
-        examplePromptsLabel: 'Cliquez sur un exemple pour le tester',
+        examplePromptsLabel: 'Ou cliquez sur un exemple pour le tester',
         marketSearchPlaceholder: 'Exemple : GPT, Claude, Mistral, US, 70B',
         trainingSearchPlaceholder: 'Exemple : GPT, Claude, 70B, Meta',
         noData: 'Aucune donnée disponible pour cette sélection.',
