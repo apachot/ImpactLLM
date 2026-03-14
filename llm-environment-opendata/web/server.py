@@ -2464,7 +2464,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <span class="loading-text">Estimating...</span>
         </button>
         <div class="example-prompts" aria-label="Application examples">
-          <p class="example-prompts-label">Click an example to test it</p>
+          <p class="example-prompts-label">Or click an example to test it</p>
           <button type="button" class="example-prompt" data-example-prompt="We have a customer-support assistant based on GPT-4o-mini, used about 4,000 times per month in France by our support team.">We have a customer-support assistant based on GPT-4o-mini, used about 4,000 times per month in France by our support team.</button>
           <button type="button" class="example-prompt" data-example-prompt="We use Claude 3.5 Sonnet in our app to summarize internal documents for around 120 consultants, with about 15,000 summaries generated per month.">We use Claude 3.5 Sonnet in our app to summarize internal documents for around 120 consultants, with about 15,000 summaries generated per month.</button>
           <button type="button" class="example-prompt" data-example-prompt="We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.">We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.</button>
@@ -3590,7 +3590,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         homeAriaLabel: 'Home',
         languageLabel: 'Language',
         estimatePlaceholder: 'Describe your AI-enabled application in natural language...',
-        examplePromptsLabel: 'Click an example to test it',
+        examplePromptsLabel: 'Or click an example to test it',
         marketSearchPlaceholder: 'Example: GPT, Claude, Mistral, US, 70B',
         trainingSearchPlaceholder: 'Example: GPT, Claude, 70B, Meta',
         noData: 'No data available for this selection.',
