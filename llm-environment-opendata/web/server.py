@@ -1123,7 +1123,8 @@ def build_method_comparisons(records, parsed_payload, result):
     target_mix = result.get("country_energy_mix") or {}
     target_country = target_mix.get("country_name") or parsed_payload.get("country")
     target_carbon = target_mix.get("grid_carbon_intensity_gco2_per_kwh") or parsed_payload.get("grid_carbon_intensity_gco2_per_kwh")
-    for method in result.get("method_results", []):
+    method_source = result.get("primary_method_results") or result.get("method_results") or []
+    for method in method_source:
         rows = factor_details(records, method.get("record_ids", []))
         detail = dict(method.get("detail", {}))
         methods.append(
@@ -1531,14 +1532,17 @@ def render_bibliography_tab():
         <div class="summary-header">
             <div>
             <div class="summary-kicker">Biliography</div>
-            <h3>Source annex used in the site</h3>
           </div>
         </div>
-        <p class="summary-intro">This annex brings together the quantified reference material used in the interface, along with everyday comparison benchmarks and country factors used for carbon and water recalculation.</p>
+        <div class="reference-copy-block">
+          <p class="summary-intro">This annex brings together the quantified reference material used in the interface, along with everyday comparison benchmarks and country factors used for carbon and water recalculation.</p>
+        </div>
 
         <div class="reference-subtable">
           <h4>Sources used to estimate proprietary LLM parameter counts</h4>
-          <p class="summary-intro">This table lists the third-party sources used when a provider does not publish the parameter count of a closed model. Estimated values are marked with `*` throughout the interface.</p>
+          <div class="reference-copy-block">
+            <p class="summary-intro">This table lists the third-party sources used when a provider does not publish the parameter count of a closed model. Estimated values are marked with `*` throughout the interface.</p>
+          </div>
           <div class="reference-table-wrap">
             <table class="reference-table">
               <thead>
@@ -2338,19 +2342,20 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       <section class="panel reference-panel">
         <div class="summary-header">
           <div>
-            <h3>Method</h3>
           </div>
         </div>
-        <p class="summary-intro">ImpactLLM is designed as a transparent screening tool, not as a black-box score. The core idea is to start from the few environmental values that are actually published in the literature, preserve their native units, and reuse them through explicit multiples rather than hidden heuristics.</p>
+        <div class="reference-copy-block">
+          <p class="summary-intro">ImpactLLM is designed as a transparent screening tool, not as a black-box score. The core idea is to start from the few environmental values that are actually published in the literature, preserve their native units, and reuse them through explicit multiples rather than hidden heuristics.</p>
+        </div>
         <div class="summary-body">
           <p><strong>1. Source-linked literature anchors.</strong></p>
-          <p>The method starts from published indicators such as <code>Wh/prompt|request</code> and <code>Wh/page</code>, each linked to a source, a model, a geography, and a documented system boundary.</p>
+          <p>The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current release, the operational estimation flow relies primarily on the <code>Wh/prompt|request</code> family.</p>
 
           <p><strong>2. A multiples-based extrapolation.</strong></p>
           <p>When direct telemetry is unavailable for a target model, ImpactLLM uses model size as an explicit scaling variable. In practice, the engine computes an energy intensity per billion active parameters from literature anchors, then applies this multiple to the target model profile.</p>
 
-          <p><strong>3. Separate method families.</strong></p>
-          <p>The tool keeps the <code>Wh/prompt|request</code> family and the <code>Wh/page</code> family separate. This avoids creating a false sense of precision when the literature does not yet provide a robust bridge between prompt-based and page-based measurements.</p>
+          <p><strong>3. A primary prompt/request method for application estimates.</strong></p>
+          <p>When <code>Wh/prompt|request</code> anchors are available, ImpactLLM uses this family as the primary method for application-level estimates. This avoids mixing prompt/request and page-generation units in one final result when no robust empirical bridge has been established between them.</p>
 
           <p><strong>4. Carbon derived from context.</strong></p>
           <p>Carbon is not copied mechanically from the source paper. It is recalculated from the retained energy estimate using the electricity mix associated with the selected country context.</p>
@@ -2363,37 +2368,25 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       </section>
     </section>
     """
-    contact_refs = load_bibliography_index()
-    contact_book_ref = format_bib_entry_apa(contact_refs.get("pachot2022book", {}))
-    contact_article_ref = format_bib_entry_apa(contact_refs.get("pachot2023sustainableai", {}))
     contact_tab = f"""
     <section class="tab-panel" id="tab-contact-panel" data-tab-panel="contact">
       <section class="panel reference-panel">
         <div class="summary-body">
-          <p><strong>About us</strong></p>
-          <p>We work on responsible AI with a focus on methodological rigor, traceability, and real-world decision support. Our work combines scientific research, product design, and operational deployment to make AI systems more transparent, more accountable, and more useful in practice.</p>
+          <p>Nous travaillons sur l’IA responsable avec un accent mis sur la rigueur méthodologique, la traçabilité et l’aide à la décision dans des contextes réels. Notre travail combine recherche scientifique, conception produit et déploiement opérationnel pour rendre les systèmes d’IA plus transparents, plus responsables et plus utiles en pratique.</p>
+          <p><strong>How to cite ImpactLLM</strong></p>
+          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 12). <em><a href="{app_url('/downloads/llm_environment_opendata_paper.pdf')}">ImpactLLM: An open tool for exploring and estimating the environmental footprint of large language models.</a></em></p>
+          <p><strong>BibTeX</strong></p>
+          <pre class="citation-block"><code>{escape(PROJECT_PAPER_BIBTEX)}</code></pre>
+          <p><a href="{app_url('/downloads/llm_environment_opendata_paper.pdf')}">Download PDF</a> | <a href="{app_url('/downloads/llm_environment_opendata_paper.bib')}">Download BibTeX entry</a></p>
           <p><strong>Arnault Pachot</strong></p>
           <p>Arnault Pachot is a researcher and entrepreneur, founder of OpenStudio and now founder of Emotia. He works on responsible digital transformation, Green IT, and decision-oriented AI systems. He co-authored the Dunod book <em>Intelligence artificielle et environnement : alliance ou nuisance ?</em>, dedicated to practical pathways for environmentally responsible AI.</p>
           <p><strong>Thierry Petit</strong></p>
           <p>Thierry Petit is a senior AI researcher and scientific leader with more than twenty years of academic and R&amp;D experience in Europe and the United States. His work spans trustworthy AI, simulation, optimization, and decision-grade platforms. At Emotia and Pollitics, he leads the scientific direction of systems designed to remain both operationally useful and methodologically robust.</p>
-          <p><strong>Selected references</strong></p>
+          <p><strong>Selected references on AI and the environment</strong></p>
           <ul class="analysis-bibliography-list">
-            <li class="analysis-bibliography-item">{escape(contact_book_ref)}</li>
-            <li class="analysis-bibliography-item">{escape(contact_article_ref)}</li>
+            <li class="analysis-bibliography-item">Pachot, A., Patissier, C., &amp; Open Studio. (2022). <em>Intelligence artificielle et environnement : alliance ou nuisance ? L'IA face aux défis écologiques d'aujourd'hui et de demain</em>. Dunod. <a href="https://www.dunod.com/entreprise-et-economie/intelligence-artificielle-et-environnement-alliance-ou-nuisance-ia-face-aux" target="_blank" rel="noopener noreferrer">https://www.dunod.com/entreprise-et-economie/intelligence-artificielle-et-environnement-alliance-ou-nuisance-ia-face-aux</a></li>
+            <li class="analysis-bibliography-item">Pachot, A., &amp; Patissier, C. (2023). Toward Sustainable Artificial Intelligence: An Overview of Environmental Protection Uses and Issues. <em>Green and Low-Carbon Economy</em>, 3(2), 105-112. <a href="https://ojs.bonviewpress.com/index.php/GLCE/article/view/608" target="_blank" rel="noopener noreferrer">https://ojs.bonviewpress.com/index.php/GLCE/article/view/608</a></li>
           </ul>
-        </div>
-      </section>
-    </section>
-    """
-    cite_tab = f"""
-    <section class="tab-panel" id="tab-cite-panel" data-tab-panel="cite">
-      <section class="panel reference-panel">
-        <div class="summary-body">
-          <p><strong>Short reference.</strong></p>
-          <p>Pachot, A., &amp; Petit, T. (2026, March 12). <em>ImpactLLM: An open tool for exploring and estimating the environmental footprint of large language models.</em></p>
-          <p><strong>BibTeX.</strong></p>
-          <pre style="margin:0; white-space:pre-wrap;"><code>{escape(PROJECT_PAPER_BIBTEX)}</code></pre>
-          <p><a href="{app_url('/downloads/llm_environment_opendata_paper.pdf')}">Download PDF</a> | <a href="{app_url('/downloads/llm_environment_opendata_paper.bib')}">Download BibTeX entry</a></p>
         </div>
       </section>
     </section>
@@ -3257,6 +3250,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       border-radius: 0.2rem;
       background: transparent;
     }}
+    .reference-copy-block {{
+      width: 100%;
+      box-sizing: border-box;
+    }}
+    .reference-copy-block .summary-intro {{
+      max-width: none;
+      width: 100%;
+    }}
     .reference-table {{
       width: 100%;
       border-collapse: collapse;
@@ -3352,19 +3353,24 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       padding: 0;
       white-space: pre-wrap;
     }}
-    #tab-cite-panel pre {{
+    .citation-block {{
       margin: 0;
       padding: 0.85rem 0.95rem;
-      border-radius: 0.2rem;
+      border-radius: 0.45rem;
       background: rgba(140, 122, 91, 0.08);
+      border: 1px solid rgba(140, 122, 91, 0.18);
       overflow-x: auto;
+      max-width: 100%;
+      box-sizing: border-box;
     }}
-    #tab-cite-panel pre code {{
+    .citation-block code {{
       display: block;
       background: transparent;
       border: 0;
       padding: 0;
       white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }}
     .assumptions-list {{
       margin: 0;
@@ -3475,9 +3481,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       </button>
       <button type="button" class="tab-button" data-tab-target="observatory">Referential</button>
       <button type="button" class="tab-button" data-tab-target="method">Method</button>
-      <button type="button" class="tab-button" data-tab-target="cite">Cite</button>
-      <button type="button" class="tab-button" data-tab-target="contact">Contact</button>
       <button type="button" class="tab-button" data-tab-target="bibliography">Biliography</button>
+      <button type="button" class="tab-button" data-tab-target="contact">About</button>
       <div class="language-control">
         <span class="language-links" aria-label="Language selector">
           <a href="#" class="language-link is-active" data-language-option="en">EN</a>
@@ -3490,7 +3495,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     {home_tab}
     {observatory_tab}
     {method_tab}
-    {cite_tab}
     {contact_tab}
     {bibliography_tab}
   </main>
@@ -3577,8 +3581,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Referential', 'Référentiel'],
       ['Method', 'Méthode'],
       ['Documentation', 'Documentation'],
-      ['Cite', 'Citer'],
-      ['Contact', 'Contact'],
+      ['About', 'À propos'],
+      ['Contact', 'À propos'],
       ['About us', 'À propos'],
       ['We work on responsible AI with a focus on methodological rigor, traceability, and real-world decision support. Our work combines scientific research, product design, and operational deployment to make AI systems more transparent, more accountable, and more useful in practice.', 'Nous travaillons sur l’IA responsable avec un accent mis sur la rigueur méthodologique, la traçabilité et l’aide à la décision dans des contextes réels. Notre travail combine recherche scientifique, conception produit et déploiement opérationnel pour rendre les systèmes d’IA plus transparents, plus responsables et plus utiles en pratique.'],
       ['Arnault Pachot is a researcher and entrepreneur, founder of OpenStudio and now founder of Emotia. He works on responsible digital transformation, Green IT, and decision-oriented AI systems. He co-authored the Dunod book ', 'Arnault Pachot est chercheur et entrepreneur, fondateur d’OpenStudio puis d’Emotia. Il travaille sur la transformation numérique responsable, le Green IT et les systèmes d’IA orientés décision. Il a coécrit chez Dunod l’ouvrage '],
@@ -3590,19 +3594,20 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Training', 'Entraînement'],
       ['Estimate application', 'Estimer l’application'],
       ['Estimating...', 'Estimation...'],
-      ['Short reference.', 'Référence courte.'],
+      ['How to cite ImpactLLM', 'Comment citer ImpactLLM'],
+      ['About us', 'À propos de nous'],
+      ['Selected references on AI and the environment', 'Références choisies sur l’IA et l’environnement'],
+      ['This annex brings together the quantified reference material used in the interface, along with everyday comparison benchmarks and country factors used for carbon and water recalculation.', 'Cette annexe rassemble les sources quantitatives mobilisées dans l’interface, ainsi que des repères de comparaison du quotidien et les facteurs pays utilisés pour le recalcul du carbone et de l’eau.'],
+      ['This table lists the third-party sources used when a provider does not publish the parameter count of a closed model. Estimated values are marked with `*` throughout the interface.', 'Ce tableau recense les sources tierces utilisées lorsqu’un fournisseur ne publie pas le nombre de paramètres d’un modèle fermé. Les valeurs estimées sont signalées par `*` dans toute l’interface.'],
       ['Download PDF', 'Télécharger le PDF'],
       ['An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models', 'Un outil ouvert pour explorer et estimer l’empreinte environnementale des grands modèles de langage'],
       ['ImpactLLM is designed as a transparent screening tool, not as a black-box score. The core idea is to start from the few environmental values that are actually published in the literature, preserve their native units, and reuse them through explicit multiples rather than hidden heuristics.', 'ImpactLLM est conçu comme un outil transparent de screening, et non comme un score boîte noire. L’idée centrale consiste à partir des quelques valeurs environnementales réellement publiées dans la littérature, à préserver leurs unités natives, puis à les réutiliser via des multiples explicites plutôt que des heuristiques cachées.'],
       ['1. Source-linked literature anchors.', '1. Ancrages bibliographiques reliés aux sources.'],
-      ['The method starts from published indicators such as ', 'La méthode part d’indicateurs publiés tels que '],
-      [', each linked to a source, a model, a geography, and a documented system boundary.', ', chacun relié à une source, un modèle, une géographie et un périmètre système documenté.'],
+      ['The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current release, the operational estimation flow relies primarily on the <code>Wh/prompt|request</code> family.', 'L’estimateur au niveau applicatif part d’indicateurs d’inférence publiés, reliés à une source, un modèle, une géographie et un périmètre système explicites. Dans la version actuelle, le flux d’estimation opérationnel repose principalement sur la famille <code>Wh/prompt|request</code>.'],
       ['2. A multiples-based extrapolation.', '2. Une extrapolation fondée sur les multiples.'],
       ['When direct telemetry is unavailable for a target model, ImpactLLM uses model size as an explicit scaling variable. In practice, the engine computes an energy intensity per billion active parameters from literature anchors, then applies this multiple to the target model profile.', 'Quand aucune télémétrie directe n’est disponible pour un modèle cible, ImpactLLM utilise la taille du modèle comme variable explicite de mise à l’échelle. En pratique, le moteur calcule une intensité énergétique par milliard de paramètres actifs à partir d’ancrages bibliographiques, puis applique ce multiple au profil du modèle cible.'],
-      ['3. Separate method families.', '3. Des familles de méthode séparées.'],
-      ['The tool keeps the ', 'L’outil conserve séparément la famille '],
-      [' family and the ', ' et la famille '],
-      [' separate. This avoids creating a false sense of precision when the literature does not yet provide a robust bridge between prompt-based and page-based measurements.', ' distinctes. Cela évite de créer une fausse impression de précision lorsque la littérature ne fournit pas encore de passerelle robuste entre les mesures fondées sur les prompts et celles fondées sur les pages.'],
+      ['3. A primary prompt/request method for application estimates.', '3. Une méthode primaire prompt/requête pour les estimations applicatives.'],
+      ['When <code>Wh/prompt|request</code> anchors are available, ImpactLLM uses this family as the primary method for application-level estimates. This avoids mixing prompt/request and page-generation units in one final result when no robust empirical bridge has been established between them.', 'Lorsque des ancrages <code>Wh/prompt|request</code> sont disponibles, ImpactLLM utilise cette famille comme méthode primaire pour les estimations au niveau applicatif. Cela évite de mélanger des unités prompt/requête et page générée dans un même résultat final lorsqu’aucune passerelle empirique robuste n’a été établie entre elles.'],
       ['4. Carbon derived from context.', '4. Un carbone dérivé du contexte.'],
       ['Carbon is not copied mechanically from the source paper. It is recalculated from the retained energy estimate using the electricity mix associated with the selected country context.', 'Le carbone n’est pas repris mécaniquement depuis l’article source. Il est recalculé à partir de l’estimation énergétique retenue en utilisant le mix électrique associé au contexte pays sélectionné.'],
       ['5. A research-oriented estimator.', '5. Un estimateur orienté recherche.'],
@@ -3793,7 +3798,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         acceptNode(node) {{
           if (!node.parentElement) return NodeFilter.FILTER_REJECT;
           if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-          if (node.parentElement.closest('script, style, textarea, pre, code, svg')) return NodeFilter.FILTER_REJECT;
+          if (node.parentElement.closest('script, style, textarea, pre, code, svg, .notranslate')) return NodeFilter.FILTER_REJECT;
           return NodeFilter.FILTER_ACCEPT;
         }}
       }});

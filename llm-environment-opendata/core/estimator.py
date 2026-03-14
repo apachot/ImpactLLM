@@ -919,22 +919,26 @@ def build_inference_method_set(records, payload):
             }
         )
 
-    aggregated = aggregate_method_ranges(methods)
+    primary_methods = methods
+    prompt_query_methods = [method for method in methods if method.get("method_id") == "prompt_query_average"]
+    if prompt_query_methods:
+        primary_methods = prompt_query_methods
+    primary_aggregated = aggregate_method_ranges(primary_methods)
     per_request_aggregate = {
         "energy_wh": rounded_range(
-            aggregated["energy_wh"]["low"] / annual_requests if annual_requests else 0.0,
-            aggregated["energy_wh"]["central"] / annual_requests if annual_requests else 0.0,
-            aggregated["energy_wh"]["high"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["energy_wh"]["low"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["energy_wh"]["central"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["energy_wh"]["high"] / annual_requests if annual_requests else 0.0,
         ),
         "carbon_gco2e": rounded_range(
-            aggregated["carbon_gco2e"]["low"] / annual_requests if annual_requests else 0.0,
-            aggregated["carbon_gco2e"]["central"] / annual_requests if annual_requests else 0.0,
-            aggregated["carbon_gco2e"]["high"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["carbon_gco2e"]["low"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["carbon_gco2e"]["central"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["carbon_gco2e"]["high"] / annual_requests if annual_requests else 0.0,
         ),
         "water_ml": rounded_range(
-            aggregated["water_ml"]["low"] / annual_requests if annual_requests else 0.0,
-            aggregated["water_ml"]["central"] / annual_requests if annual_requests else 0.0,
-            aggregated["water_ml"]["high"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["water_ml"]["low"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["water_ml"]["central"] / annual_requests if annual_requests else 0.0,
+            primary_aggregated["water_ml"]["high"] / annual_requests if annual_requests else 0.0,
         ),
     }
 
@@ -968,10 +972,10 @@ def build_inference_method_set(records, payload):
             "carbon_gco2e": scale_range(per_request_aggregate["carbon_gco2e"], requests_per_feature),
             "water_ml": scale_range(per_request_aggregate["water_ml"], requests_per_feature),
         },
-        "annual_llm": aggregated,
-        "annual_total": aggregated,
+        "annual_llm": primary_aggregated,
+        "annual_total": primary_aggregated,
         "method_results": methods,
-        "primary_method_results": methods,
+        "primary_method_results": primary_methods,
         "aggregation_strategy": "wh_parameter_model",
         "selected_factors": dedupe(selected_factors),
         "assumptions": assumptions,
