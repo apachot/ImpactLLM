@@ -3284,9 +3284,16 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       font: inherit;
       font-size: 0.95rem;
       line-height: 1.6;
+      font-style: italic;
       text-align: left;
       cursor: pointer;
       transition: border-color 120ms ease, background 120ms ease;
+    }}
+    .example-prompt::before {{
+      content: '"';
+    }}
+    .example-prompt::after {{
+      content: '"';
     }}
     .example-prompt:hover {{
       border-color: rgba(36,59,99,0.28);
