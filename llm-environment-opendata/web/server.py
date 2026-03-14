@@ -1118,6 +1118,7 @@ def build_method_modal_body(method, analysis_refs=None):
               <p>\\[
               P^{{eff}}_c = P_t \\times F_{{ctx}} \\times F_{{srv}} \\times F_{{mod}} \\times F_{{arch}} = {format_scalar(detail.get('target_params'))} \\times {format_scalar(context_factor.get('central'))} \\times {format_scalar(serving_factor.get('central'))} \\times {format_scalar(modality_factor.get('central'))} \\times {format_scalar(architecture_factor.get('central'))} = {format_scalar(effective_params.get('central'))}
               \\]</p>
+              <p>Where <code>P^{{eff}}_c</code> is the central effective active-parameter proxy, <code>P_t</code> the retained raw active-parameter count, <code>F_{{ctx}}</code> the context-window factor, <code>F_{{srv}}</code> the serving-mode factor, <code>F_{{mod}}</code> the modality factor, and <code>F_{{arch}}</code> the architecture-overhead factor.</p>
               <p>Central token factor:</p>
               <p>\\[
               F_{{tok,c}} = {format_scalar(token_factor.get('central'), 4)}
@@ -3872,6 +3873,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Applied parameter factor:', 'Facteur de paramètres appliqué :'],
       ['Extrapolated energy for one inference unit:', 'Énergie extrapolée pour une unité d’inférence :'],
       ['Central effective active parameters:', 'Paramètres actifs effectifs centraux :'],
+      ['Where <code>P^{eff}_c</code> is the central effective active-parameter proxy, <code>P_t</code> the retained raw active-parameter count, <code>F_{ctx}</code> the context-window factor, <code>F_{srv}</code> the serving-mode factor, <code>F_{mod}</code> the modality factor, and <code>F_{arch}</code> the architecture-overhead factor.', 'Où <code>P^{eff}_c</code> désigne le proxy central de paramètres actifs effectifs, <code>P_t</code> le nombre brut de paramètres actifs retenu, <code>F_{ctx}</code> le facteur de fenêtre de contexte, <code>F_{srv}</code> le facteur de mode de service, <code>F_{mod}</code> le facteur de modalité, et <code>F_{arch}</code> le facteur d’overhead d’architecture.'],
       ['Central token factor:', 'Facteur central de tokens :'],
       ['Central per-request energy:', 'Énergie centrale par requête :'],
       ['The displayed range widens the scaling exponent and the contextual overhead factors between low, central, and high scenarios.', 'La plage affichée élargit l’exposant de mise à l’échelle et les facteurs d’overhead contextuels entre les scénarios bas, central et haut.'],
