@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import csv
+import math
 from pathlib import Path
 
 
@@ -18,6 +19,10 @@ MARKET_REFERENCE_INPUT_TOKENS = 1000.0
 MARKET_REFERENCE_OUTPUT_TOKENS = 550.0
 MARKET_REFERENCE_READING_WORDS_PER_MINUTE = 238.0
 MARKET_REFERENCE_WORDS_PER_TOKEN = 0.75
+MARKET_PROMPT_ANCHOR_ENERGY_WH = 0.24
+MARKET_PROMPT_ANCHOR_ACTIVE_PARAMS_B = 180.0
+MARKET_PROMPT_OUTPUT_WEIGHT = 1.8
+MARKET_REFERENCE_COMPUTE_TOKENS = MARKET_REFERENCE_INPUT_TOKENS + (MARKET_PROMPT_OUTPUT_WEIGHT * MARKET_REFERENCE_OUTPUT_TOKENS)
 MARKET_REFERENCE_REQUESTS_PER_HOUR = round(
     (MARKET_REFERENCE_READING_WORDS_PER_MINUTE * 60.0)
     / (MARKET_REFERENCE_OUTPUT_TOKENS * MARKET_REFERENCE_WORDS_PER_TOKEN),
@@ -1230,6 +1235,163 @@ def build_market_model_predictions(records):
             }
         )
     return predictions
+
+
+def parse_market_bool(value):
+    return normalize_identifier(value) in {"yes", "true", "1"}
+
+
+def market_context_factor(context_window_tokens, scenario="central"):
+    context_tokens = to_float(context_window_tokens, default=131072.0)
+    coefficients = {
+        "low": 0.02,
+        "central": 0.035,
+        "high": 0.05,
+    }
+    coefficient = coefficients.get(scenario, coefficients["central"])
+    ratio = max(context_tokens, 32768.0) / 32768.0
+    return clamp(1.0 + (coefficient * math.log(ratio, 2)), 0.95, 1.3)
+
+
+def market_serving_factor(serving_mode, scenario="central"):
+    normalized = normalize_identifier(serving_mode)
+    factors = {
+        "open": {"low": 1.0, "central": 1.0, "high": 1.02},
+        "hybrid": {"low": 1.03, "central": 1.07, "high": 1.1},
+        "closed": {"low": 1.08, "central": 1.14, "high": 1.2},
+    }
+    bucket = factors.get(normalized, {"low": 1.02, "central": 1.05, "high": 1.1})
+    return bucket.get(scenario, bucket["central"])
+
+
+def market_modality_factor(row, scenario="central"):
+    if not parse_market_bool(row.get("vision_support")):
+        return 1.0
+    factors = {
+        "low": 1.01,
+        "central": 1.03,
+        "high": 1.06,
+    }
+    return factors.get(scenario, factors["central"])
+
+
+def market_architecture_factor(row, scenario="central"):
+    active = to_float(row.get("active_parameters_billion"), default=None)
+    total = to_float(row.get("total_parameters_billion"), default=active)
+    if active in (None, 0):
+        return 1.0
+    total = total or active
+    ratio = max(total / active, 1.0)
+    coefficients = {
+        "low": 0.04,
+        "central": 0.08,
+        "high": 0.12,
+    }
+    coefficient = coefficients.get(scenario, coefficients["central"])
+    multiplier = 1.0 + (coefficient * math.log(ratio, 2)) if ratio > 1.0 else 1.0
+    notes = str(row.get("architecture_notes", "") or "").lower()
+    if "reasoning" in notes:
+        reasoning_factors = {
+            "low": 1.02,
+            "central": 1.05,
+            "high": 1.08,
+        }
+        multiplier *= reasoning_factors.get(scenario, reasoning_factors["central"])
+    return multiplier
+
+
+def market_token_factor(input_tokens, output_tokens, scenario="central"):
+    input_value = to_float(input_tokens, default=0.0)
+    output_value = to_float(output_tokens, default=0.0)
+    compute_tokens = input_value + (MARKET_PROMPT_OUTPUT_WEIGHT * output_value)
+    if compute_tokens <= 0:
+        compute_tokens = MARKET_REFERENCE_COMPUTE_TOKENS
+    exponents = {
+        "low": 0.85,
+        "central": 0.92,
+        "high": 1.0,
+    }
+    exponent = exponents.get(scenario, exponents["central"])
+    return (compute_tokens / MARKET_REFERENCE_COMPUTE_TOKENS) ** exponent
+
+
+def compute_market_screening_proxy(row, input_tokens=None, output_tokens=None, requests_per_hour=None):
+    active = to_float(row.get("active_parameters_billion"), default=None)
+    if active in (None, 0):
+        return None
+
+    if input_tokens is None:
+        input_tokens = MARKET_REFERENCE_INPUT_TOKENS
+    if output_tokens is None:
+        output_tokens = MARKET_REFERENCE_OUTPUT_TOKENS
+    if requests_per_hour is None:
+        requests_per_hour = MARKET_REFERENCE_REQUESTS_PER_HOUR
+
+    country_mix = get_country_mix(row.get("estimation_country_code"))
+    grid_carbon_intensity = to_float((country_mix or {}).get("grid_carbon_intensity_gco2_per_kwh"), default=None)
+
+    ranges = {}
+    effective_params = {}
+    for scenario, exponent in (("low", 0.85), ("central", 0.95), ("high", 1.05)):
+        effective_active = active
+        effective_active *= market_context_factor(row.get("context_window_tokens"), scenario=scenario)
+        effective_active *= market_serving_factor(row.get("serving_mode"), scenario=scenario)
+        effective_active *= market_modality_factor(row, scenario=scenario)
+        effective_active *= market_architecture_factor(row, scenario=scenario)
+        effective_params[scenario] = round(effective_active, 4)
+        token_factor = market_token_factor(input_tokens, output_tokens, scenario=scenario)
+        energy = MARKET_PROMPT_ANCHOR_ENERGY_WH * ((effective_active / MARKET_PROMPT_ANCHOR_ACTIVE_PARAMS_B) ** exponent) * token_factor
+        carbon = wh_to_gco2e(energy, grid_carbon_intensity) if grid_carbon_intensity is not None else None
+        ranges[scenario] = {
+            "per_request_energy_wh": round(energy, 4),
+            "per_request_carbon_gco2e": round(carbon, 4) if carbon is not None else None,
+            "per_hour_energy_wh": round(energy * requests_per_hour, 4),
+            "per_hour_carbon_gco2e": round(carbon * requests_per_hour, 4) if carbon is not None else None,
+        }
+
+    effective_values = list(effective_params.values())
+    request_energy_values = [ranges[item]["per_request_energy_wh"] for item in ("low", "central", "high")]
+    request_carbon_values = [ranges[item]["per_request_carbon_gco2e"] or 0.0 for item in ("low", "central", "high")]
+    hour_energy_values = [ranges[item]["per_hour_energy_wh"] for item in ("low", "central", "high")]
+    hour_carbon_values = [ranges[item]["per_hour_carbon_gco2e"] or 0.0 for item in ("low", "central", "high")]
+
+    return {
+        "method_id": "market_multifactor_prompt_proxy_v1",
+        "method_label": "Multi-factor prompt proxy calibrated on production prompt energy",
+        "reference_anchor": "Elsworth et al. (2025) Gemini Apps median prompt = 0.24 Wh/prompt",
+        "standard_input_tokens": input_tokens,
+        "standard_output_tokens": output_tokens,
+        "standard_requests_per_hour": requests_per_hour,
+        "effective_active_parameters_billion": rounded_range(
+            min(effective_values),
+            effective_params["central"],
+            max(effective_values),
+        ),
+        "per_request_energy_wh": rounded_range(
+            min(request_energy_values),
+            ranges["central"]["per_request_energy_wh"],
+            max(request_energy_values),
+        ),
+        "per_request_carbon_gco2e": rounded_range(
+            min(request_carbon_values),
+            ranges["central"]["per_request_carbon_gco2e"] or 0.0,
+            max(request_carbon_values),
+        ),
+        "per_hour_energy_wh": rounded_range(
+            min(hour_energy_values),
+            ranges["central"]["per_hour_energy_wh"],
+            max(hour_energy_values),
+        ),
+        "per_hour_carbon_gco2e": rounded_range(
+            min(hour_carbon_values),
+            ranges["central"]["per_hour_carbon_gco2e"] or 0.0,
+            max(hour_carbon_values),
+        ),
+        "notes": (
+            "Central estimate = prompt-energy anchor scaled by active parameters, context window, serving mode, modality support, "
+            "architecture overhead, and reference token volume. Low/high values widen the exponent and overhead assumptions."
+        ),
+    }
 
 
 def normalize_training_metric_value(record):

@@ -26,6 +26,7 @@ from core.estimator import (
     load_market_models,
     load_models,
     load_records,
+    to_float,
     wh_to_gco2e,
     wh_to_liters,
 )
@@ -1978,22 +1979,40 @@ def render_market_models_table(records):
         parameter_title = escape(str(row.get("parameter_source", "") or "Source not specified"))
         server_title = escape(str(row.get("server_country_source", "") or "Source not specified"))
         estimation_title = escape(str(row.get("estimation_country_source", "") or "Source not specified"))
-        method_map = row.get("method_results_by_id") or {}
-        prompt_method = method_map.get("prompt_query_average") or {}
-        page_method = method_map.get("page_average") or {}
-        prompt_energy = format_central_display(prompt_method.get("annual_energy_wh", {}), "energy") if prompt_method else "n.d."
-        page_energy = format_central_display(page_method.get("annual_energy_wh", {}), "energy") if page_method else "n.d."
-        prompt_carbon = format_central_display(prompt_method.get("annual_carbon_gco2e", {}), "carbon") if prompt_method else "n.d."
-        page_carbon = format_central_display(page_method.get("annual_carbon_gco2e", {}), "carbon") if page_method else "n.d."
+        screening_method = row.get("screening_method_id", "") or "n.d."
+        hour_energy_range = {
+            "low": to_float(row.get("screening_per_hour_energy_wh_low"), default=0.0),
+            "central": to_float(row.get("screening_per_hour_energy_wh_central"), default=0.0),
+            "high": to_float(row.get("screening_per_hour_energy_wh_high"), default=0.0),
+        }
+        hour_carbon_range = {
+            "low": to_float(row.get("screening_per_hour_carbon_gco2e_low"), default=0.0),
+            "central": to_float(row.get("screening_per_hour_carbon_gco2e_central"), default=0.0),
+            "high": to_float(row.get("screening_per_hour_carbon_gco2e_high"), default=0.0),
+        }
+        request_energy_range = {
+            "low": to_float(row.get("screening_per_request_energy_wh_low"), default=0.0),
+            "central": to_float(row.get("screening_per_request_energy_wh_central"), default=0.0),
+            "high": to_float(row.get("screening_per_request_energy_wh_high"), default=0.0),
+        }
+        request_carbon_range = {
+            "low": to_float(row.get("screening_per_request_carbon_gco2e_low"), default=0.0),
+            "central": to_float(row.get("screening_per_request_carbon_gco2e_central"), default=0.0),
+            "high": to_float(row.get("screening_per_request_carbon_gco2e_high"), default=0.0),
+        }
+        hour_energy = format_central_display(hour_energy_range, "energy")
+        hour_carbon = format_central_display(hour_carbon_range, "carbon")
+        request_energy = format_central_display(request_energy_range, "energy")
+        request_carbon = format_central_display(request_carbon_range, "carbon")
         chart_rows.append(
             {
                 "label": row.get("display_name", row.get("model_id", "")),
                 "provider": row.get("provider", ""),
                 "kind": "model",
-                "prompt_energy_wh": float((prompt_method.get("annual_energy_wh") or {}).get("central", 0.0) or 0.0),
-                "page_energy_wh": float((page_method.get("annual_energy_wh") or {}).get("central", 0.0) or 0.0),
-                "prompt_carbon_gco2e": float((prompt_method.get("annual_carbon_gco2e") or {}).get("central", 0.0) or 0.0),
-                "page_carbon_gco2e": float((page_method.get("annual_carbon_gco2e") or {}).get("central", 0.0) or 0.0),
+                "prompt_energy_wh": hour_energy_range["central"],
+                "page_energy_wh": hour_energy_range["central"],
+                "prompt_carbon_gco2e": hour_carbon_range["central"],
+                "page_carbon_gco2e": hour_carbon_range["central"],
             }
         )
         body.append(
@@ -2003,10 +2022,10 @@ def render_market_models_table(records):
               <td data-sort-value="{escape(market_parameter_sort_value(row), quote=True)}">{escape(format_market_parameter_display(row))}</td>
               <td>{escape(row.get('server_country', 'n.d.') or 'n.d.')}<div class="reference-locator">{escape(format_market_country_status(row.get('server_country_status')))}</div></td>
               <td>{escape(row.get('estimation_country_code', 'n.d.') or 'n.d.')}<div class="reference-locator">{escape(format_market_country_status(row.get('estimation_country_status')))}</div></td>
-              <td>{escape(prompt_energy)}</td>
-              <td>{escape(page_energy)}</td>
-              <td>{escape(prompt_carbon)}</td>
-              <td>{escape(page_carbon)}</td>
+              <td>{escape(hour_energy)}<div class="reference-locator">{escape(screening_method)}</div></td>
+              <td>{escape(hour_carbon)}</td>
+              <td>{escape(request_energy)}</td>
+              <td>{escape(request_carbon)}</td>
             </tr>
             """
         )
@@ -2075,7 +2094,7 @@ def render_market_models_table(records):
           <h3>{len(rows)} current models tracked by the project</h3>
         </div>
       </div>
-      <p class="summary-intro">The table below compares the models tracked by the project under the same inference scenario. For each model, the application shows separately the estimate derived from the <strong>Wh/prompt|request</strong> proxy and the estimate derived from the <strong>Wh/page</strong> proxy, along with their carbon counterparts.</p>
+      <p class="summary-intro">The table below compares the models tracked by the project under the same inference scenario. For each model, the application shows the central values produced by the project’s multi-factor prompt proxy, both per hour of standardized use and per request.</p>
       <div class="table-toolbar">
         <label class="table-search-label" for="market-model-search">Search for a model</label>
         <input id="market-model-search" class="table-search-input" type="search" placeholder="Example: GPT, Claude, Mistral, US, 70B" data-table-search="market-models-table">
@@ -2088,10 +2107,10 @@ def render_market_models_table(records):
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="1" data-sort-type="number">Parameters</button></th>
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="2" data-sort-type="text">Server country</button></th>
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="3" data-sort-type="text">Retained country</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="4" data-sort-type="number">Energy / h prompt-req</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="5" data-sort-type="number">Energy / h page</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="6" data-sort-type="number">Carbon / h prompt-req</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="7" data-sort-type="number">Carbon / h page</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="4" data-sort-type="number">Energy / h</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="5" data-sort-type="number">Carbon / h</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="6" data-sort-type="number">Energy / request</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="7" data-sort-type="number">Carbon / request</button></th>
             </tr>
           </thead>
           <tbody>{''.join(body)}</tbody>
@@ -2099,6 +2118,7 @@ def render_market_models_table(records):
       </div>
       <p class="summary-intro">`Server country` describes the published information about where the service is hosted or, for open-weight models, the fact that hosting depends on deployment. `Retained country` is the country actually used to recalculate CO2 via the electricity mix. When the exact country is not published, the project uses an explicit screening proxy rather than presenting a location as certain.</p>
       <p class="summary-intro">`*` indicates an estimated parameter count rather than a provider-published value.</p>
+      <p class="summary-intro">The market-model comparison now relies on <code>market_multifactor_prompt_proxy_v1</code>: a prompt-energy screening proxy calibrated on Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume.</p>
     </section>
     """
 
@@ -3743,7 +3763,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Applied parameter factor:', 'Facteur de paramètres appliqué :'],
       ['Extrapolated energy for one inference unit:', 'Énergie extrapolée pour une unité d’inférence :'],
       ['This family currently relies on a single literature anchor, so the displayed central value is a calibrated proxy rather than a cross-study average.', 'Cette famille repose actuellement sur un seul ancrage bibliographique, de sorte que la valeur centrale affichée est un proxy calibré plutôt qu’une moyenne inter-études.'],
-      ['The table below compares the models tracked by the project under the same inference scenario. For each model, the application shows separately the estimate derived from the <strong>Wh/prompt|request</strong> proxy and the estimate derived from the <strong>Wh/page</strong> proxy, along with their carbon counterparts.', 'Le tableau ci-dessous compare les modèles suivis par le projet dans le même scénario d’inférence. Pour chaque modèle, l’application affiche séparément l’estimation dérivée du proxy <strong>Wh/prompt|requête</strong> et celle dérivée du proxy <strong>Wh/page</strong>, ainsi que leurs équivalents carbone.'],
+      ['The table below compares the models tracked by the project under the same inference scenario. For each model, the application shows the central values produced by the project’s multi-factor prompt proxy, both per hour of standardized use and per request.', 'Le tableau ci-dessous compare les modèles suivis par le projet dans le même scénario d’inférence. Pour chaque modèle, l’application affiche les valeurs centrales produites par le proxy prompt multi-facteurs du projet, à la fois par heure d’usage standardisé et par requête.'],
       ['3. Carbon derivation from the country mix', '3. Dérivation du carbone à partir du mix pays'],
       ['Carbon is not reused directly from the literature. It is derived from extrapolated energy using the retained country electricity mix, here', 'Le carbone n’est pas réutilisé directement depuis la littérature. Il est dérivé de l’énergie extrapolée à partir du mix électrique du pays retenu, ici'],
       ['The unit result retained for this method then leads to the following annualized values: energy', 'Le résultat unitaire retenu pour cette méthode conduit ensuite aux valeurs annualisées suivantes : énergie'],
@@ -3771,10 +3791,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Parameters', 'Paramètres'],
       ['Server country', 'Pays du serveur'],
       ['Retained country', 'Pays retenu'],
-      ['Energy / h prompt-req', 'Énergie / h prompt-requête'],
-      ['Energy / h page', 'Énergie / h page'],
-      ['Carbon / h prompt-req', 'Carbone / h prompt-requête'],
-      ['Carbon / h page', 'Carbone / h page'],
+      ['Energy / h', 'Énergie / h'],
+      ['Carbon / h', 'Carbone / h'],
+      ['Energy / request', 'Énergie / requête'],
+      ['Carbon / request', 'Carbone / requête'],
+      ['The market-model comparison now relies on <code>market_multifactor_prompt_proxy_v1</code>: a prompt-energy screening proxy calibrated on Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume.', 'La comparaison des modèles du marché repose désormais sur <code>market_multifactor_prompt_proxy_v1</code> : un proxy de screening en énergie par prompt calibré sur Elsworth et al. (2025), puis ajusté selon les paramètres actifs, la fenêtre de contexte, le mode de service, le support multimodal, l’overhead d’architecture et un volume de tokens standardisé.'],
       ['Training energy', 'Énergie d’entraînement'],
       ['Direct training CO2e', 'CO2e direct d’entraînement'],
       ['Provider', 'Fournisseur'],
