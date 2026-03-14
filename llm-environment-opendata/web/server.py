@@ -2274,18 +2274,18 @@ def render_training_models_table(records):
     chart_rows.extend(
         [
             {
-                "label": "10,000 households (annual domestic use)",
+                "label": "3,132 households (annual domestic use)",
                 "provider": "Everyday benchmark",
                 "kind": "reference",
-                "direct_training_energy_wh": 25000000000.0,
+                "direct_training_energy_wh": 7829215576.6,
                 "direct_training_carbon_tco2e": 235.0,
             },
             {
-                "label": "4,955 full commercial flights",
+                "label": "1,651 full commercial flights",
                 "provider": "Everyday benchmark",
                 "kind": "reference",
                 "direct_training_energy_wh": 0.0,
-                "direct_training_carbon_tco2e": 104560.5,
+                "direct_training_carbon_tco2e": 34842.8,
             },
         ]
     )
@@ -2304,7 +2304,7 @@ def render_training_models_table(records):
         <button type="button" class="chart-tab-button" data-training-chart-control="metric-tab" data-metric-value="direct_training_carbon" aria-selected="false">Carbon</button>
       </div>
       <div id="training-impact-chart" class="models-impact-chart" data-training-chart-rows='{escape(json.dumps(chart_rows, ensure_ascii=False), quote=True)}'></div>
-      <p class="summary-intro models-benchmark-note">Benchmarks integrated into the chart: household electricity for 10,000 households over one year of domestic use, i.e. ≈ 25 GWh based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), road transport from the ICCT (2025, 235 gCO2e/km for an average gasoline car), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ 104,560.5 tCO2 for 4,955 full flights.</p>
+      <p class="summary-intro models-benchmark-note">Benchmarks integrated into the chart: household electricity for <strong>3,132 households</strong> over one year of domestic use, i.e. ≈ <strong>7.83 GWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>34,842.8 tCO2e</strong> for <strong>1,651 full flights</strong>. These two comparison points are aligned with the order of magnitude of Claude Opus 4.1 in the training chart.</p>
     </section>
     <section class="panel reference-panel">
       <div class="summary-header">
@@ -3923,7 +3923,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['current models tracked by the project', 'modèles actuels suivis par le projet'],
       ['Comparative training impacts of models', 'Impacts d’entraînement comparés des modèles'],
       ['The chart below shows the extrapolated central values for all catalog models across two training indicator families: training energy and direct training CO2e. Everyday benchmarks are inserted directly into the list to situate the orders of magnitude.', 'Le graphique ci-dessous présente les valeurs centrales extrapolées pour tous les modèles du catalogue selon deux familles d’indicateurs d’entraînement : l’énergie d’entraînement et le CO2e direct d’entraînement. Des repères du quotidien sont intégrés directement à la liste pour situer les ordres de grandeur.'],
-      ['Benchmarks integrated into the chart: household electricity for 10,000 households over one year of domestic use, i.e. ≈ 25 GWh based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), road transport from the ICCT (2025, 235 gCO2e/km for an average gasoline car), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ 104,560.5 tCO2 for 4,955 full flights.', 'Repères intégrés au graphique : électricité domestique pour 10 000 foyers sur une année d’usage résidentiel, soit ≈ 25 GWh sur la base d’une consommation moyenne de 2 500 kWh par foyer (estimation RTE 2021), transport routier d’après l’ICCT (2025, 235 gCO2e/km pour une voiture essence moyenne), et aviation commerciale complète dérivée de Klöwer et al. (2025) à partir de 577.97 MtCO2 et 27.45 millions de vols commerciaux observés en 2023, soit ≈ 104 560.5 tCO2 pour 4 955 vols complets.'],
+      ['Benchmarks integrated into the chart: household electricity for <strong>3,132 households</strong> over one year of domestic use, i.e. ≈ <strong>7.83 GWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>34,842.8 tCO2e</strong> for <strong>1,651 full flights</strong>. These two comparison points are aligned with the order of magnitude of Claude Opus 4.1 in the training chart.', 'Repères intégrés au graphique : électricité domestique pour <strong>3 132 foyers</strong> sur une année d’usage résidentiel, soit ≈ <strong>7,83 GWh</strong> sur la base d’une consommation moyenne de 2 500 kWh par foyer (estimation RTE 2021), et aviation commerciale complète dérivée de Klöwer et al. (2025) à partir de 577.97 MtCO2 et 27.45 millions de vols commerciaux observés en 2023, soit ≈ <strong>34 842,8 tCO2e</strong> pour <strong>1 651 vols complets</strong>. Ces deux repères sont alignés sur l’ordre de grandeur de Claude Opus 4.1 dans le graphique d’entraînement.'],
       ['current models with estimated training impacts', 'modèles actuels avec impacts d’entraînement estimés'],
       ['This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>direct training CO2e</strong>. Values are extrapolated by parameter count. Training energy therefore remains a more fragile screening reconstruction than direct carbon.', 'Ce tableau projette les ordres de grandeur d’entraînement des modèles actuels à partir des familles d’indicateurs réellement disponibles dans la littérature : <strong>l’énergie d’entraînement</strong>, dérivée des émissions lorsque le pays source est documenté dans la table des mixes électriques, et le <strong>CO2e direct d’entraînement</strong>. Les valeurs sont extrapolées selon le nombre de paramètres. L’énergie d’entraînement reste donc une reconstruction de screening plus fragile que le carbone direct.'],
       ['`*` indicates an estimated parameter count rather than a provider-published value.', '`*` indique un nombre de paramètres estimé plutôt qu’une valeur publiée par le fournisseur.'],
@@ -3970,8 +3970,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Laptop 1 h', 'Ordinateur portable 1 h'],
       ['Electric heater 4.1 min', 'Radiateur électrique 4,1 min'],
       ['Electric heater 10 min (US mix)', 'Radiateur électrique 10 min (mix US)'],
-      ['10,000 households (annual domestic use)', '10 000 foyers (usage domestique annuel)'],
-      ['4,955 full commercial flights', '4 955 vols commerciaux complets'],
+      ['3,132 households (annual domestic use)', '3 132 foyers (usage domestique annuel)'],
+      ['1,651 full commercial flights', '1 651 vols commerciaux complets'],
     ];
     const attributeTranslations = [
       ['#description', 'placeholder', 'estimatePlaceholder'],
@@ -3997,8 +3997,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       'Laptop 1 h': 'Laptop 1 h',
       'Electric heater 4.1 min': 'Electric heater 4.1 min',
       'Electric heater 10 min (US mix)': 'Electric heater 10 min (US mix)',
-      '10,000 households (annual domestic use)': '10,000 households (annual domestic use)',
-      '4,955 full commercial flights': '4,955 full commercial flights',
+      '3,132 households (annual domestic use)': '3,132 households (annual domestic use)',
+      '1,651 full commercial flights': '1,651 full commercial flights',
     }};
     function normalizeLanguage(value) {{
       return value === 'fr' ? 'fr' : 'en';
