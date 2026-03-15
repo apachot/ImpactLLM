@@ -39,11 +39,7 @@ from core.openai_parser import (
 
 
 PROJECT_NAME = "ImpactLLM"
-BIB_PATH = ROOT.parent / "ImpactLLM-paper" / "references_ImpactLLM.bib"
 ANALYSIS_LOG_PATH = ROOT / "data" / "analysis_runs.json"
-PAPER_TEX_PATH = ROOT.parent / "ImpactLLM-paper" / "ImpactLLM_paper.tex"
-PAPER_PDF_PATH = ROOT.parent / "ImpactLLM-paper" / "ImpactLLM_paper.pdf"
-PAPER_PREVIEW_PATH = ROOT / "web" / "ImpactLLM_paper_preview.png"
 LOGO_PATH = ROOT / "web" / "impactllm-logo.svg"
 LOGO_MARK_PATH = ROOT / "web" / "impactllm-mark.svg"
 REFERENCE_PAGE_TOKENS = 750.0
@@ -67,6 +63,31 @@ def normalize_url_prefix(prefix):
 
 
 URL_PREFIX = normalize_url_prefix(os.environ.get("LLM_WEB_PREFIX", ""))
+
+
+def first_existing_path(*paths):
+    for path in paths:
+        if path.exists():
+            return path
+    return paths[0]
+
+
+BIB_PATH = first_existing_path(
+    ROOT.parent / "ImpactLLM-paper" / "references_ImpactLLM.bib",
+    ROOT.parent / "llm-environment-opendata-paper" / "references_llm_environment_opendata.bib",
+)
+PAPER_TEX_PATH = first_existing_path(
+    ROOT.parent / "ImpactLLM-paper" / "ImpactLLM_paper.tex",
+    ROOT.parent / "llm-environment-opendata-paper" / "llm_environment_opendata_paper.tex",
+)
+PAPER_PDF_PATH = first_existing_path(
+    ROOT.parent / "ImpactLLM-paper" / "ImpactLLM_paper.pdf",
+    ROOT.parent / "llm-environment-opendata-paper" / "llm_environment_opendata_paper.pdf",
+)
+PAPER_PREVIEW_PATH = first_existing_path(
+    ROOT / "web" / "ImpactLLM_paper_preview.png",
+    ROOT / "web" / "llm_environment_opendata_paper_preview.png",
+)
 
 
 def app_url(path="/"):
@@ -2490,7 +2511,6 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <p><strong>5. A research-oriented estimator.</strong></p>
           <p data-i18n-html="method-research-body">The result is an auditable estimate intended for comparison, software design, and methodological discussion. It is useful precisely because the assumptions, factors, and retained sources remain visible and inspectable.</p>
 
-          <p><strong>Scientific paper.</strong> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Download the PDF</a></p>
           <a class="paper-preview-card" href="{app_url('/downloads/ImpactLLM_paper.pdf')}" target="_blank" rel="noopener noreferrer" aria-label="Open the scientific paper PDF">
             <span class="paper-preview-frame">
               <img src="{app_url('/downloads/ImpactLLM_paper_preview.png')}" alt="Preview of the first page of the ImpactLLM scientific paper" loading="lazy">
@@ -3570,6 +3590,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       background: transparent;
       border: 0;
       padding: 0;
+      font-size: 0.82rem;
+      line-height: 1.45;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -4500,7 +4522,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._write_html(render_page(error_message="Favicon not found."), status=404, send_body=send_body)
             return
-        if normalized_path == "/downloads/ImpactLLM_paper.pdf":
+        if normalized_path in {"/downloads/ImpactLLM_paper.pdf", "/downloads/llm_environment_opendata_paper.pdf"}:
             if PAPER_PDF_PATH.exists():
                 self._write_bytes(
                     PAPER_PDF_PATH.read_bytes(),
@@ -4511,7 +4533,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._write_html(render_page(error_message="Publication PDF not found."), status=404, send_body=send_body)
             return
-        if normalized_path == "/downloads/ImpactLLM_paper.bib":
+        if normalized_path in {"/downloads/ImpactLLM_paper.bib", "/downloads/llm_environment_opendata_paper.bib"}:
             self._write_bytes(
                 PROJECT_PAPER_BIBTEX.encode("utf-8"),
                 "application/x-bibtex; charset=utf-8",
@@ -4519,7 +4541,7 @@ class Handler(BaseHTTPRequestHandler):
                 send_body=send_body,
             )
             return
-        if normalized_path == "/downloads/ImpactLLM_paper_preview.png":
+        if normalized_path in {"/downloads/ImpactLLM_paper_preview.png", "/downloads/llm_environment_opendata_paper_preview.png"}:
             if PAPER_PREVIEW_PATH.exists():
                 self._write_bytes(
                     PAPER_PREVIEW_PATH.read_bytes(),
