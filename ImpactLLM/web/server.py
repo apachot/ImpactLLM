@@ -1737,7 +1737,7 @@ def render_bibliography_tab():
         factor_table_rows.append(
             f"""
         <tr>
-          <td>{escape(row.get('display_name', '') or row.get('model_id', '') or 'n.d.')}</td>
+          <td>{render_model_detail_trigger(row)}</td>
           <td>{escape(row.get('provider', 'n.d.') or 'n.d.')}</td>
           <td>{escape(format_market_parameter_display(row))}{parameter_ref}</td>
           <td>{to_float(row.get('context_window_tokens'), default=0):,.0f}{context_ref}</td>
@@ -1764,7 +1764,7 @@ def render_bibliography_tab():
         training_factor_table_rows.append(
             f"""
         <tr>
-          <td>{escape(row.get('display_name', '') or row.get('model_id', '') or 'n.d.')}</td>
+          <td>{render_model_detail_trigger(row)}</td>
           <td>{escape(row.get('provider', 'n.d.') or 'n.d.')}</td>
           <td>{escape(format_scalar(training_params))}B{training_param_ref}</td>
           <td>{training_tokens:,.2f}T{training_tokens_ref}</td>
@@ -2241,6 +2241,48 @@ def format_market_parameter_display(row):
     return "n.d."
 
 
+def format_model_field_status(value):
+    labels = {
+        "observed": "Observed",
+        "documented": "Documented",
+        "estimated": "Estimated",
+        "screening_prior": "Screening prior",
+        "screening_proxy": "Screening proxy",
+        "provider_country_proxy": "Provider-country proxy",
+        "multi_region": "Documented multi-region",
+        "documented_multi_region": "Documented multi-region",
+        "self_hosted_variable": "Varies by hosting provider",
+        "comparative_reference": "Comparative reference",
+        "documented_region_proxy": "Documented region proxy",
+        "non_specified": "Not specified",
+        "api": "API",
+        "open": "Open",
+        "closed": "Closed",
+        "hybrid": "Hybrid",
+        "pretraining": "Pretraining",
+        "continued_pretraining": "Continued pretraining",
+        "instruction_tuning": "Instruction tuning",
+        "alignment_or_rl": "Alignment / RL",
+        "modern_hyperscale_gpu": "Modern hyperscale GPU",
+        "mixed_gpu_cluster": "Mixed GPU cluster",
+        "standard_gpu_cluster": "Standard GPU cluster",
+        "older_or_unknown_cluster": "Older or unknown cluster",
+    }
+    return labels.get(str(value or "").strip(), str(value or "n.d.").replace("_", " ").title())
+
+
+def render_model_detail_trigger(row):
+    model_id = str(row.get("model_id", "") or "").strip()
+    label = str(row.get("display_name", "") or row.get("model_id", "") or "n.d.")
+    provider = str(row.get("provider", "") or "")
+    return (
+        f'<button type="button" class="model-detail-trigger" data-model-detail-key="{escape(model_id, quote=True)}">'
+        f"<strong>{escape(label)}</strong>"
+        f'<div class="method-basis">{escape(provider)}</div>'
+        f"</button>"
+    )
+
+
 def market_parameter_sort_value(row):
     for key in ("active_parameters_billion", "total_parameters_billion"):
         raw = str(row.get(key, "") or "").strip()
@@ -2397,7 +2439,7 @@ def build_market_models_view(records):
         body.append(
             f"""
             <tr>
-              <td><strong>{escape(row.get('display_name', row.get('model_id', '')))}</strong><div class="method-basis">{escape(row.get('provider', ''))}</div></td>
+              <td>{render_model_detail_trigger(row)}</td>
               <td data-sort-value="{escape(market_parameter_sort_value(row), quote=True)}">{escape(format_market_parameter_display(row))}</td>
               <td>{escape(row.get('estimation_country_code', 'n.d.') or 'n.d.')}<div class="reference-locator">{escape(format_market_country_status(row.get('estimation_country_status')))}</div></td>
               <td>{escape(hour_energy)}</td>
@@ -2649,6 +2691,140 @@ def format_training_estimate(value, unit):
     return f"{value:,.2f} {unit}".replace(",", " ")
 
 
+def build_model_detail_index(records):
+    market_rows = load_market_models()
+    training_rows = build_training_market_predictions(records)
+    training_by_model_id = {
+        str(row.get("model_id", "") or "").strip(): row
+        for row in training_rows
+        if str(row.get("model_id", "") or "").strip()
+    }
+    details = {}
+    for row in market_rows:
+        model_id = str(row.get("model_id", "") or "").strip()
+        if not model_id:
+            continue
+        training_row = training_by_model_id.get(model_id, {})
+        training_results = training_row.get("training_results_by_id") or {}
+        energy_result = training_results.get("direct_training_energy") or {}
+        carbon_result = training_results.get("direct_training_carbon") or {}
+        training_energy_range = energy_result.get("range") or {}
+        training_carbon_range = carbon_result.get("range") or {}
+        inference_energy = {
+            "low": to_float(row.get("screening_per_hour_energy_wh_low"), default=0.0),
+            "central": to_float(row.get("screening_per_hour_energy_wh_central"), default=0.0),
+            "high": to_float(row.get("screening_per_hour_energy_wh_high"), default=0.0),
+        }
+        inference_carbon = {
+            "low": to_float(row.get("screening_per_hour_carbon_gco2e_low"), default=0.0),
+            "central": to_float(row.get("screening_per_hour_carbon_gco2e_central"), default=0.0),
+            "high": to_float(row.get("screening_per_hour_carbon_gco2e_high"), default=0.0),
+        }
+        training_energy = {
+            "low": to_float(training_energy_range.get("low"), default=to_float(row.get("training_energy_wh_low"), default=0.0)),
+            "central": to_float(training_energy_range.get("central"), default=to_float(row.get("training_energy_wh_central"), default=0.0)),
+            "high": to_float(training_energy_range.get("high"), default=to_float(row.get("training_energy_wh_high"), default=0.0)),
+        }
+        training_carbon = {
+            "low": to_float(training_carbon_range.get("low"), default=to_float(row.get("training_carbon_tco2e_low"), default=0.0)),
+            "central": to_float(training_carbon_range.get("central"), default=to_float(row.get("training_carbon_tco2e_central"), default=0.0)),
+            "high": to_float(training_carbon_range.get("high"), default=to_float(row.get("training_carbon_tco2e_high"), default=0.0)),
+        }
+
+        source_entries = []
+        seen_sources = set()
+
+        def register_source(label, citation, url, status=""):
+            citation_text = str(citation or "").strip()
+            url_text = str(url or "").strip()
+            if not citation_text and not url_text:
+                return
+            key = (label, citation_text, url_text, status)
+            if key in seen_sources:
+                return
+            seen_sources.add(key)
+            source_entries.append(
+                {
+                    "label": label,
+                    "citation": citation_text or "n.d.",
+                    "url": url_text,
+                    "status": format_model_field_status(status),
+                }
+            )
+
+        register_source("Parameters", row.get("parameter_source"), row.get("parameter_source_url"), row.get("parameter_value_status"))
+        register_source("Release date", row.get("release_source"), row.get("release_source_url"), "documented")
+        register_source("Context window", row.get("context_source"), row.get("context_source_url"), "documented")
+        register_source("Modalities", row.get("modalities_source"), row.get("modalities_source_url"), "documented")
+        register_source("Architecture", row.get("architecture_source"), row.get("architecture_source_url"), "documented")
+        register_source("Retained country", row.get("estimation_country_source"), row.get("estimation_country_source_url"), row.get("estimation_country_status"))
+        register_source("Server country", row.get("server_country_source"), row.get("server_country_source_url"), row.get("server_country_status"))
+        register_source("Inference method anchor", row.get("screening_reference_anchor"), "", row.get("screening_method_id"))
+        register_source("Training tokens", row.get("training_tokens_source"), row.get("training_tokens_source_url"), row.get("training_tokens_status"))
+        register_source("Training regime", row.get("training_regime_source"), row.get("training_regime_source_url"), row.get("training_regime_status"))
+        register_source("Training modality", row.get("training_multimodal_source"), row.get("training_multimodal_source_url"), "documented")
+        register_source("Training hardware", row.get("training_hardware_source"), row.get("training_hardware_source_url"), "screening_proxy")
+        register_source("Training method anchor", row.get("training_multifactor_anchor"), "", row.get("training_multifactor_method_id"))
+
+        details[model_id] = {
+            "key": model_id,
+            "display_name": str(row.get("display_name", "") or model_id),
+            "model_id": model_id,
+            "provider": str(row.get("provider", "") or ""),
+            "market_status": format_model_field_status(row.get("market_status")),
+            "serving_mode": format_model_field_status(row.get("serving_mode")),
+            "release_date": str(row.get("release_date", "") or "n.d."),
+            "retained_country": str(row.get("estimation_country_code", "") or "n.d."),
+            "retained_country_status": format_market_country_status(row.get("estimation_country_status")),
+            "server_country": str(row.get("server_country", "") or "n.d."),
+            "parameter_display": format_market_parameter_display(row),
+            "parameter_status": format_model_field_status(row.get("parameter_value_status")),
+            "effective_active_parameters_billion": format_scalar(to_float(row.get("screening_effective_active_parameters_billion_central"), default=0.0)),
+            "context_window_tokens": format_count(to_float(row.get("context_window_tokens"), default=0.0)) if to_float(row.get("context_window_tokens"), default=0.0) else "n.d.",
+            "vision_support": "Yes" if parse_market_bool(row.get("vision_support")) else "No",
+            "input_modalities": str(row.get("input_modalities", "") or "n.d."),
+            "output_modalities": str(row.get("output_modalities", "") or "n.d."),
+            "architecture_notes": str(row.get("architecture_notes", "") or "n.d."),
+            "notes": str(row.get("notes", "") or "n.d."),
+            "screening_method_id": str(row.get("screening_method_id", "") or "n.d."),
+            "screening_reference_anchor": str(row.get("screening_reference_anchor", "") or "n.d."),
+            "training_method_id": str(row.get("training_multifactor_method_id", "") or "n.d."),
+            "training_multifactor_anchor": str(row.get("training_multifactor_anchor", "") or "n.d."),
+            "training_tokens_estimate_trillion": format_scalar(to_float(row.get("training_tokens_estimate_trillion"), default=0.0)) if to_float(row.get("training_tokens_estimate_trillion"), default=0.0) else "n.d.",
+            "training_tokens_status": format_model_field_status(row.get("training_tokens_status")),
+            "training_regime": format_model_field_status(row.get("training_regime")),
+            "training_regime_status": format_model_field_status(row.get("training_regime_status")),
+            "training_hardware": format_model_field_status(row.get("training_hardware_class_proxy")),
+            "training_multimodal": "Yes" if parse_market_bool(row.get("training_multimodal")) else "No",
+            "inference": {
+                "energy": {
+                    "low": format_value_display(inference_energy["low"], "energy"),
+                    "central": format_value_display(inference_energy["central"], "energy"),
+                    "high": format_value_display(inference_energy["high"], "energy"),
+                },
+                "carbon": {
+                    "low": format_value_display(inference_carbon["low"], "carbon"),
+                    "central": format_value_display(inference_carbon["central"], "carbon"),
+                    "high": format_value_display(inference_carbon["high"], "carbon"),
+                },
+            },
+            "training": {
+                "energy": {
+                    "low": format_training_estimate(training_energy["low"], "Wh"),
+                    "central": format_training_estimate(training_energy["central"], "Wh"),
+                    "high": format_training_estimate(training_energy["high"], "Wh"),
+                },
+                "carbon": {
+                    "low": format_training_estimate(training_carbon["low"], "tCO2e"),
+                    "central": format_training_estimate(training_carbon["central"], "tCO2e"),
+                    "high": format_training_estimate(training_carbon["high"], "tCO2e"),
+                },
+            },
+            "sources": source_entries,
+        }
+    return details
+
+
 def build_training_models_view(records):
     rows = build_training_market_predictions(records)
     chart_rows = []
@@ -2758,7 +2934,7 @@ def build_training_models_view(records):
         body.append(
             f"""
             <tr>
-              <td><strong>{escape(row.get('display_name', row.get('model_id', '')))}</strong><div class="method-basis">{escape(row.get('provider', ''))}</div></td>
+              <td>{render_model_detail_trigger(row)}</td>
               <td data-sort-value="{escape(market_parameter_sort_value(row), quote=True)}">{escape(format_market_parameter_display(row))}</td>
               <td>{escape(format_training_estimate(direct_energy_value, 'Wh'))}</td>
               <td>{escape(format_training_estimate(direct_carbon_value, 'tCO2e'))}</td>
@@ -3029,6 +3205,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         """
 
     all_records = load_records()
+    model_detail_index = build_model_detail_index(all_records)
     market_models_chart_block = render_market_models_charts(all_records)
     market_models_table_block = render_market_models_table(all_records)
     training_models_chart_block = render_training_models_charts(all_records)
@@ -3219,6 +3396,21 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         </div>
       </div>
     </section>
+    """
+    model_detail_drawer = f"""
+    <div id="model-detail-root" data-model-detail-index='{escape(json.dumps(model_detail_index, ensure_ascii=False), quote=True)}'>
+      <div class="model-detail-overlay" id="model-detail-overlay" hidden></div>
+      <aside class="model-detail-drawer" id="model-detail-drawer" aria-hidden="true" aria-labelledby="model-detail-title">
+        <div class="model-detail-header">
+          <div>
+            <div class="summary-kicker">Model profile</div>
+            <h3 id="model-detail-title">Model detail</h3>
+          </div>
+          <button type="button" class="model-detail-close" id="model-detail-close" aria-label="Close model detail">×</button>
+        </div>
+        <div class="model-detail-content" id="model-detail-content"></div>
+      </aside>
+    </div>
     """
 
     return f"""<!doctype html>
@@ -3561,6 +3753,159 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       color: var(--muted);
       font-size: 0.88rem;
       line-height: 1.55;
+    }}
+    .model-detail-trigger {{
+      display: block;
+      width: 100%;
+      padding: 0;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+    }}
+    .model-detail-trigger strong {{
+      color: var(--accent);
+      text-decoration: underline;
+      text-decoration-color: rgba(36, 59, 99, 0.22);
+      text-underline-offset: 0.14em;
+    }}
+    .model-detail-overlay {{
+      position: fixed;
+      inset: 0;
+      background: rgba(17, 24, 39, 0.34);
+      z-index: 39;
+    }}
+    .model-detail-drawer {{
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(620px, 100vw);
+      height: 100vh;
+      background: #fff;
+      border-left: 1px solid var(--line);
+      box-shadow: -12px 0 36px rgba(17, 24, 39, 0.18);
+      transform: translateX(100%);
+      transition: transform 180ms ease;
+      z-index: 40;
+      display: flex;
+      flex-direction: column;
+    }}
+    .model-detail-drawer.is-open {{
+      transform: translateX(0);
+    }}
+    .model-detail-header {{
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: flex-start;
+      padding: 1.1rem 1.2rem 0.9rem;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+    }}
+    .model-detail-close {{
+      width: 2.2rem;
+      height: 2.2rem;
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 1.3rem;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }}
+    .model-detail-content {{
+      overflow-y: auto;
+      padding: 1rem 1.2rem 1.4rem;
+    }}
+    .model-detail-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.8rem;
+      margin-bottom: 1rem;
+    }}
+    .model-detail-card {{
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.9rem 1rem;
+      background: #fff;
+    }}
+    .model-detail-card h4,
+    .model-detail-section h4 {{
+      margin: 0 0 0.7rem;
+      font-size: 1rem;
+    }}
+    .model-detail-list {{
+      display: grid;
+      gap: 0.48rem;
+      margin: 0;
+    }}
+    .model-detail-row {{
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+    }}
+    .model-detail-label {{
+      color: var(--muted);
+      font-size: 0.92rem;
+    }}
+    .model-detail-value {{
+      text-align: right;
+      font-weight: 600;
+      color: var(--ink);
+    }}
+    .model-detail-pillbar {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 0.7rem 0 0;
+    }}
+    .model-detail-pill {{
+      display: inline-flex;
+      align-items: center;
+      padding: 0.34rem 0.65rem;
+      border-radius: 999px;
+      background: #f3f6fb;
+      color: var(--accent);
+      font-size: 0.84rem;
+      font-weight: 600;
+    }}
+    .model-detail-section {{
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+    }}
+    .model-detail-copy {{
+      margin: 0;
+      color: var(--ink);
+      line-height: 1.7;
+    }}
+    .model-detail-source-list {{
+      display: grid;
+      gap: 0.75rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }}
+    .model-detail-source-list li {{
+      padding: 0.8rem 0.9rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }}
+    .model-detail-source-meta {{
+      display: block;
+      color: var(--muted);
+      font-size: 0.84rem;
+      margin-bottom: 0.25rem;
     }}
     .method-detail-button,
     .modal-close-button {{
@@ -4278,6 +4623,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       .submetrics {{ grid-template-columns: 1fr; }}
       .summary-header {{ flex-direction: column; align-items: flex-start; }}
       .result-method-metrics {{ grid-template-columns: 1fr; }}
+      .model-detail-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -4307,6 +4653,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     {method_tab}
     {contact_tab}
     {bibliography_tab}
+    {model_detail_drawer}
   </main>
   <script>
     const estimateForm = document.getElementById('estimate-form');
@@ -4341,12 +4688,27 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const trainingUncertaintyChart = document.getElementById('training-uncertainty-chart');
     const trainingScatterLogChart = document.getElementById('training-carbon-params-log-chart');
     const trainingReleaseTimelineChart = document.getElementById('training-release-timeline-chart');
+    const modelDetailRoot = document.getElementById('model-detail-root');
+    const modelDetailOverlay = document.getElementById('model-detail-overlay');
+    const modelDetailDrawer = document.getElementById('model-detail-drawer');
+    const modelDetailContent = document.getElementById('model-detail-content');
+    const modelDetailTitle = document.getElementById('model-detail-title');
+    const modelDetailClose = document.getElementById('model-detail-close');
     const trainingChartControls = Array.from(document.querySelectorAll('[data-training-chart-control="metric-tab"]'));
     const LANGUAGE_STORAGE_KEY = 'llm-environment-language';
     const TAB_HASH_PREFIX = '#tab-';
     const MIN_DESCRIPTION_LENGTH = 50;
     const textNodeOriginals = new WeakMap();
     const currentLanguage = {{ value: 'en' }};
+    let currentModelDetailKey = null;
+    let modelDetailIndex = {{}};
+    if (modelDetailRoot) {{
+      try {{
+        modelDetailIndex = JSON.parse(modelDetailRoot.getAttribute('data-model-detail-index') || '{{}}');
+      }} catch (error) {{
+        modelDetailIndex = {{}};
+      }}
+    }}
     const tabDefaultSubtabs = {{
       observatory: 'observatory-inference',
       referential: 'referential-inference',
@@ -4797,6 +5159,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       renderTrainingChart();
       renderTrainingScatterChart();
       renderTrainingScatterLogChart();
+      if (currentModelDetailKey) {{
+        renderModelDetail(currentModelDetailKey);
+      }}
       if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {{
         window.MathJax.typesetPromise();
       }}
@@ -4835,6 +5200,23 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         descriptionInput.setSelectionRange(descriptionInput.value.length, descriptionInput.value.length);
         updateSubmitState();
       }});
+    }});
+    document.addEventListener('click', (event) => {{
+      const trigger = event.target.closest('[data-model-detail-key]');
+      if (trigger) {{
+        renderModelDetail(trigger.getAttribute('data-model-detail-key'));
+      }}
+    }});
+    if (modelDetailClose) {{
+      modelDetailClose.addEventListener('click', closeModelDetail);
+    }}
+    if (modelDetailOverlay) {{
+      modelDetailOverlay.addEventListener('click', closeModelDetail);
+    }}
+    document.addEventListener('keydown', (event) => {{
+      if (event.key === 'Escape') {{
+        closeModelDetail();
+      }}
     }});
     updateSubmitState();
     function activateTab(target) {{
@@ -5684,6 +6066,197 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         nvidia: 'NVIDIA',
       }};
       return mapping[provider] || provider || '';
+    }};
+    const escapeHtml = (value) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    const renderModelDetailRow = (label, value) => `
+      <div class="model-detail-row">
+        <span class="model-detail-label">${{escapeHtml(label)}}</span>
+        <span class="model-detail-value">${{escapeHtml(value || 'n.d.')}}</span>
+      </div>
+    `;
+    const closeModelDetail = () => {{
+      if (!modelDetailDrawer || !modelDetailOverlay) return;
+      modelDetailDrawer.classList.remove('is-open');
+      modelDetailDrawer.setAttribute('aria-hidden', 'true');
+      modelDetailOverlay.hidden = true;
+      document.body.style.overflow = '';
+      currentModelDetailKey = null;
+    }};
+    const renderModelDetail = (key) => {{
+      if (!modelDetailDrawer || !modelDetailOverlay || !modelDetailContent || !modelDetailTitle) return;
+      const detail = modelDetailIndex[key];
+      if (!detail) return;
+      const text = currentLanguage.value === 'fr'
+        ? {{
+            overview: 'Vue d’ensemble',
+            inference: 'Inférence',
+            training: 'Entraînement',
+            method: 'Méthode et hypothèses',
+            sources: 'Sources',
+            status: 'Statut',
+            release: 'Sortie',
+            country: 'Pays retenu',
+            serverCountry: 'Pays serveur',
+            parameters: 'Paramètres',
+            effectiveParameters: 'Paramètres effectifs',
+            context: 'Contexte',
+            vision: 'Vision',
+            inputs: 'Entrées',
+            outputs: 'Sorties',
+            energyLow: 'Énergie basse',
+            energyCentral: 'Énergie centrale',
+            energyHigh: 'Énergie haute',
+            carbonLow: 'Carbone bas',
+            carbonCentral: 'Carbone central',
+            carbonHigh: 'Carbone haut',
+            tokens: 'Tokens d’entraînement',
+            regime: 'Régime',
+            hardware: 'Matériel',
+            multimodal: 'Multimodal',
+            methodId: 'Méthode',
+            anchor: 'Ancrage',
+            notes: 'Notes',
+          }}
+        : {{
+            overview: 'Overview',
+            inference: 'Inference',
+            training: 'Training',
+            method: 'Method and assumptions',
+            sources: 'Sources',
+            status: 'Status',
+            release: 'Release',
+            country: 'Retained country',
+            serverCountry: 'Server country',
+            parameters: 'Parameters',
+            effectiveParameters: 'Effective parameters',
+            context: 'Context',
+            vision: 'Vision',
+            inputs: 'Inputs',
+            outputs: 'Outputs',
+            energyLow: 'Energy low',
+            energyCentral: 'Energy central',
+            energyHigh: 'Energy high',
+            carbonLow: 'Carbon low',
+            carbonCentral: 'Carbon central',
+            carbonHigh: 'Carbon high',
+            tokens: 'Training tokens',
+            regime: 'Regime',
+            hardware: 'Hardware',
+            multimodal: 'Multimodal',
+            methodId: 'Method',
+            anchor: 'Anchor',
+            notes: 'Notes',
+          }};
+      modelDetailTitle.textContent = detail.display_name || detail.model_id || 'Model detail';
+      const sourcesMarkup = (detail.sources || []).map((entry) => `
+        <li>
+          <span class="model-detail-source-meta">${{escapeHtml(entry.label)}} | ${{escapeHtml(entry.status || 'n.d.')}}</span>
+          ${{entry.url ? `<a href="${{escapeHtml(entry.url)}}" target="_blank" rel="noopener noreferrer">${{escapeHtml(entry.citation)}}</a>` : `<span>${{escapeHtml(entry.citation)}}</span>`}}
+        </li>
+      `).join('');
+      modelDetailContent.innerHTML = `
+        <p class="model-detail-copy">${{escapeHtml(detail.provider || '')}} | ${{escapeHtml(detail.model_id || '')}}</p>
+        <div class="model-detail-pillbar">
+          <span class="model-detail-pill">${{escapeHtml(detail.market_status || 'n.d.')}}</span>
+          <span class="model-detail-pill">${{escapeHtml(detail.serving_mode || 'n.d.')}}</span>
+          <span class="model-detail-pill">${{escapeHtml(detail.parameter_status || 'n.d.')}}</span>
+        </div>
+        <section class="model-detail-section">
+          <h4>${{text.overview}}</h4>
+          <div class="model-detail-grid">
+            <div class="model-detail-card">
+              <h4>${{text.overview}}</h4>
+              <div class="model-detail-list">
+                ${{renderModelDetailRow(text.release, detail.release_date)}}
+                ${{renderModelDetailRow(text.country, `${{detail.retained_country}} (${{detail.retained_country_status}})`)}}
+                ${{renderModelDetailRow(text.serverCountry, detail.server_country)}}
+                ${{renderModelDetailRow(text.parameters, detail.parameter_display)}}
+                ${{renderModelDetailRow(text.effectiveParameters, `${{detail.effective_active_parameters_billion}}B`)}}
+                ${{renderModelDetailRow(text.context, detail.context_window_tokens === 'n.d.' ? 'n.d.' : `${{detail.context_window_tokens}} tokens`)}}
+              </div>
+            </div>
+            <div class="model-detail-card">
+              <h4>${{text.overview}}</h4>
+              <div class="model-detail-list">
+                ${{renderModelDetailRow(text.vision, detail.vision_support)}}
+                ${{renderModelDetailRow(text.inputs, detail.input_modalities)}}
+                ${{renderModelDetailRow(text.outputs, detail.output_modalities)}}
+                ${{renderModelDetailRow(text.regime, detail.training_regime)}}
+                ${{renderModelDetailRow(text.hardware, detail.training_hardware)}}
+                ${{renderModelDetailRow(text.multimodal, detail.training_multimodal)}}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="model-detail-section">
+          <h4>${{text.inference}}</h4>
+          <div class="model-detail-grid">
+            <div class="model-detail-card">
+              <h4>Energy / h</h4>
+              <div class="model-detail-list">
+                ${{renderModelDetailRow(text.energyLow, detail.inference.energy.low)}}
+                ${{renderModelDetailRow(text.energyCentral, detail.inference.energy.central)}}
+                ${{renderModelDetailRow(text.energyHigh, detail.inference.energy.high)}}
+              </div>
+            </div>
+            <div class="model-detail-card">
+              <h4>Carbon / h</h4>
+              <div class="model-detail-list">
+                ${{renderModelDetailRow(text.carbonLow, detail.inference.carbon.low)}}
+                ${{renderModelDetailRow(text.carbonCentral, detail.inference.carbon.central)}}
+                ${{renderModelDetailRow(text.carbonHigh, detail.inference.carbon.high)}}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="model-detail-section">
+          <h4>${{text.training}}</h4>
+          <div class="model-detail-grid">
+            <div class="model-detail-card">
+              <h4>Energy</h4>
+              <div class="model-detail-list">
+                ${{renderModelDetailRow(text.energyLow, detail.training.energy.low)}}
+                ${{renderModelDetailRow(text.energyCentral, detail.training.energy.central)}}
+                ${{renderModelDetailRow(text.energyHigh, detail.training.energy.high)}}
+              </div>
+            </div>
+            <div class="model-detail-card">
+              <h4>CO2e</h4>
+              <div class="model-detail-list">
+                ${{renderModelDetailRow(text.carbonLow, detail.training.carbon.low)}}
+                ${{renderModelDetailRow(text.carbonCentral, detail.training.carbon.central)}}
+                ${{renderModelDetailRow(text.carbonHigh, detail.training.carbon.high)}}
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="model-detail-section">
+          <h4>${{text.method}}</h4>
+          <div class="model-detail-list">
+            ${{renderModelDetailRow(text.methodId, detail.screening_method_id)}}
+            ${{renderModelDetailRow(text.anchor, detail.screening_reference_anchor)}}
+            ${{renderModelDetailRow(text.tokens, detail.training_tokens_estimate_trillion === 'n.d.' ? 'n.d.' : `${{detail.training_tokens_estimate_trillion}}T`)}}
+            ${{renderModelDetailRow(text.methodId, detail.training_method_id)}}
+            ${{renderModelDetailRow(text.anchor, detail.training_multifactor_anchor)}}
+            ${{renderModelDetailRow(text.notes, detail.notes)}}
+          </div>
+          <p class="model-detail-copy" style="margin-top:0.9rem;">${{escapeHtml(detail.architecture_notes || 'n.d.')}}</p>
+        </section>
+        <section class="model-detail-section">
+          <h4>${{text.sources}}</h4>
+          <ul class="model-detail-source-list">${{sourcesMarkup || `<li><span>${{currentLanguage.value === 'fr' ? 'Aucune source disponible.' : 'No source available.'}}</span></li>`}}</ul>
+        </section>
+      `;
+      currentModelDetailKey = key;
+      modelDetailOverlay.hidden = false;
+      modelDetailDrawer.classList.add('is-open');
+      modelDetailDrawer.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
     }};
     const renderInferenceTrainingTradeoffChart = () => {{
       if (!inferenceTrainingTradeoffChart) return;
