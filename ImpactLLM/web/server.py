@@ -2263,6 +2263,7 @@ def build_market_models_view(records):
     params_chart_rows = []
     scatter_chart_rows = []
     factor_heatmap_rows = []
+    cross_impact_chart_rows = []
     country_mix_chart_rows = []
     release_timeline_rows = []
     body = []
@@ -2348,6 +2349,19 @@ def build_market_models_view(records):
                 "request_carbon_gco2e": request_carbon_range["central"],
             }
         )
+        training_energy_central = to_float(row.get("training_energy_wh_central"), default=0.0)
+        training_carbon_central = to_float(row.get("training_carbon_tco2e_central"), default=0.0)
+        cross_impact_chart_rows.append(
+            {
+                "label": row.get("display_name", row.get("model_id", "")),
+                "provider": provider,
+                "active_parameters_billion": raw_active_parameters,
+                "hour_energy_wh": hour_energy_range["central"],
+                "hour_carbon_gco2e": hour_carbon_range["central"],
+                "direct_training_energy_wh": training_energy_central,
+                "direct_training_carbon_tco2e": training_carbon_central,
+            }
+        )
         country_mix_chart_rows.append(
             {
                 "label": row.get("display_name", row.get("model_id", "")),
@@ -2430,6 +2444,7 @@ def build_market_models_view(records):
         "params_chart_rows": params_chart_rows,
         "scatter_chart_rows": scatter_chart_rows,
         "factor_heatmap_rows": factor_heatmap_rows,
+        "cross_impact_chart_rows": cross_impact_chart_rows,
         "country_mix_chart_rows": country_mix_chart_rows,
         "release_timeline_rows": release_timeline_rows,
         "table_body": "".join(body),
@@ -2456,6 +2471,20 @@ def render_market_models_charts(records):
       <div id="models-impact-chart" class="models-impact-chart" data-chart-rows='{escape(json.dumps(view["chart_rows"], ensure_ascii=False), quote=True)}'></div>
       <p class="summary-intro models-chart-note">The chart below shows the estimated central values for all catalog models under a standardized inference scenario corresponding to <strong>1 hour of active use</strong>: <strong>{view["requests_per_hour"]} interactions/hour</strong>, <strong>1000 input tokens</strong>, <strong>550 output tokens</strong>, and one LLM request per use. The hourly pace is derived from an average reading speed of <strong>{view["reading_wpm"]} words/min</strong> (<a href="https://www.sciencedirect.com/science/article/pii/S0749596X19300786" target="_blank" rel="noopener noreferrer">Brysbaert, 2019</a>) and a project convention of <strong>1 token ≈ {view["words_per_token"]} word</strong>.</p>
       <p class="summary-intro models-chart-note models-benchmark-note">Benchmarks integrated into the chart, all expressed over one hour or rescaled to a comparable order of magnitude: household electricity from <a href="https://www.extension.purdue.edu/extmedia/4H/4-H-1015-W.pdf" target="_blank" rel="noopener noreferrer">Purdue Extension</a> measurements (fluorescent lamp ≈ 9.3 Wh over 1 h; laptop ≈ 32 Wh over 1 h) and a 1500 W electric space heater rescaled here to <strong>4.1 minutes</strong> to obtain ≈ <strong>103.5 Wh</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario; for carbon, an average gasoline car benchmark derived from the <a href="https://theicct.org/publication/electric-cars-life-cycle-analysis-emissions-europe-jul25/" target="_blank" rel="noopener noreferrer">ICCT (2025)</a> factor retained by the project (235 gCO2e/km), here rescaled to <strong>0.17 km</strong> to obtain ≈ <strong>40.0 gCO2e</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario.</p>
+    </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Trade-off</div>
+          <h3>Inference vs. training impact map</h3>
+        </div>
+      </div>
+      <p class="summary-intro">This scatter plot compares each catalog model on two axes at once: standardized inference impact over one hour on the horizontal axis and retained training impact on the vertical axis. Point size follows the retained active parameter count, while colors distinguish providers.</p>
+      <div class="chart-tabbar" role="tablist" aria-label="Inference and training trade-off metric">
+        <button type="button" class="chart-tab-button is-active" data-cross-impact-control="metric-tab" data-metric-value="energy" aria-selected="true">Energy</button>
+        <button type="button" class="chart-tab-button" data-cross-impact-control="metric-tab" data-metric-value="carbon" aria-selected="false">Carbon</button>
+      </div>
+      <div id="inference-training-tradeoff-chart" class="models-impact-chart" data-cross-impact-chart-rows='{escape(json.dumps(view["cross_impact_chart_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     <section class="panel reference-panel">
       <div class="summary-header">
@@ -4254,10 +4283,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const paramsChart = document.getElementById('params-impact-chart');
     const scatterChart = document.getElementById('carbon-params-scatter-chart');
     const factorHeatmap = document.getElementById('inference-factor-heatmap');
+    const inferenceTrainingTradeoffChart = document.getElementById('inference-training-tradeoff-chart');
     const scatterLinearChart = document.getElementById('carbon-params-linear-chart');
     const countryMixChart = document.getElementById('country-mix-sensitivity-chart');
     const inferenceReleaseTimelineChart = document.getElementById('inference-release-timeline-chart');
     const chartControls = Array.from(document.querySelectorAll('[data-model-chart-control="metric-tab"]'));
+    const crossImpactControls = Array.from(document.querySelectorAll('[data-cross-impact-control="metric-tab"]'));
     const trainingChart = document.getElementById('training-impact-chart');
     const trainingScatterChart = document.getElementById('training-carbon-params-scatter-chart');
     const trainingFactorHeatmap = document.getElementById('training-factor-heatmap');
@@ -4464,7 +4495,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['The chart below shows the estimated central values for all catalog models under a standardized inference scenario corresponding to 1 hour of active use: 34.6 interactions/hour, 1000 input tokens, 550 output tokens, and one LLM request per use. The hourly pace is derived from an average reading speed of 238.0 words/min (Brysbaert, 2019) and a project convention of 1 token ≈ 0.75 word.', 'Le graphique ci-dessous présente les valeurs centrales estimées pour tous les modèles du catalogue dans un scénario d’inférence standardisé correspondant à 1 heure d’usage actif : 34,6 interactions/heure, 1000 tokens en entrée, 550 tokens en sortie et une requête LLM par usage. Le rythme horaire est dérivé d’une vitesse moyenne de lecture de 238,0 mots/min (Brysbaert, 2019) et d’une convention du projet de 1 token ≈ 0,75 mot.'],
       ['Benchmarks integrated into the chart, all expressed over one hour or rescaled to a comparable order of magnitude: household electricity from Purdue Extension measurements (fluorescent lamp ≈ 9.3 Wh over 1 h; laptop ≈ 32 Wh over 1 h) and a 1500 W electric space heater rescaled here to <strong>4.1 minutes</strong> to obtain ≈ <strong>103.5 Wh</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario; for carbon, an average gasoline car benchmark derived from the ICCT (2025) factor retained by the project (235 gCO2e/km), here rescaled to <strong>0.17 km</strong> to obtain ≈ <strong>40.0 gCO2e</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario.', 'Repères intégrés au graphique, tous exprimés sur une heure ou redimensionnés à un ordre de grandeur comparable : consommation électrique domestique issue des mesures de Purdue Extension (lampe fluorescente ≈ 9,3 Wh sur 1 h ; ordinateur portable ≈ 32 Wh sur 1 h) et radiateur électrique de 1500 W ramené ici à <strong>4,1 minutes</strong> pour obtenir ≈ <strong>103,5 Wh</strong>, proche de l’ordre de grandeur de Claude Opus 4.1 dans le scénario d’inférence ; pour le carbone, un repère de voiture essence moyenne dérivé du facteur ICCT (2025) retenu par le projet (235 gCO2e/km), ici ramené à <strong>0,17 km</strong> pour obtenir ≈ <strong>40,0 gCO2e</strong>, proche de l’ordre de grandeur de Claude Opus 4.1 dans le scénario d’inférence.'],
       ['Average gasoline car for 0.17 km', 'Voiture essence moyenne sur 0,17 km'],
+      ['Trade-off', 'Arbitrage'],
       ['Inference model landscape', 'Paysage des modèles en inférence'],
+      ['Inference vs. training impact map', 'Carte des impacts inférence vs entraînement'],
       ['Inference screening factor heatmap', 'Heatmap des facteurs de screening en inférence'],
       ['Training screening factor heatmap', 'Heatmap des facteurs de screening en entraînement'],
       ['Training uncertainty span by model', 'Étendue d’incertitude d’entraînement par modèle'],
@@ -4475,6 +4508,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Training carbon vs. parameter count', 'Carbone d’entraînement vs nombre de paramètres'],
       ['Training carbon by model release date', 'Carbone d’entraînement par date de sortie du modèle'],
       ['This landscape view clusters the catalog models from the characteristics retained by the project for inference screening: active and effective parameters, context window, serving mode, modality support, architecture notes, and central energy and carbon outputs. Nearby points indicate models with similar retained screening profiles, not a simple one-metric ranking.', 'Cette vue de paysage regroupe les modèles du catalogue à partir des caractéristiques retenues par le projet pour le screening en inférence : paramètres actifs et effectifs, fenêtre de contexte, mode de service, support multimodal, notes d’architecture, ainsi que sorties centrales d’énergie et de carbone. Des points proches indiquent des profils de screening retenus similaires, et non un classement sur une seule métrique.'],
+      ['This scatter plot compares each catalog model on two axes at once: standardized inference impact over one hour on the horizontal axis and retained training impact on the vertical axis. Point size follows the retained active parameter count, while colors distinguish providers.', 'Ce nuage de points compare chaque modèle du catalogue sur deux axes à la fois : l’impact d’inférence standardisé sur une heure sur l’axe horizontal et l’impact d’entraînement retenu sur l’axe vertical. La taille des points suit le nombre de paramètres actifs retenu, tandis que les couleurs distinguent les fournisseurs.'],
       ['This heatmap exposes the central screening factors retained for each market model. It shows the four multiplicative factors used by the project’s prompt proxy and the resulting ratio between effective and raw active parameters.', 'Cette heatmap rend visibles les facteurs centraux de screening retenus pour chaque modèle du marché. Elle montre les quatre facteurs multiplicatifs utilisés par le proxy prompt du projet ainsi que le ratio résultant entre paramètres actifs effectifs et paramètres actifs bruts.'],
       ['This heatmap exposes the central screening factors retained for each market model in the training proxy. It shows the regime, architecture, and hardware factors together with the retained training-token ratio per parameter.', 'Cette heatmap rend visibles les facteurs centraux de screening retenus pour chaque modèle du marché dans le proxy d’entraînement. Elle montre les facteurs de régime, d’architecture et de matériel, ainsi que le ratio retenu de tokens d’entraînement par paramètre.'],
       ['This view shows the low, central, and high direct training CO2e values retained by the project for each market model. It makes explicit how widely the training proxy can vary once the parameter and token exponents and contextual factors are widened.', 'Cette vue montre, pour chaque modèle du marché, les valeurs basse, centrale et haute de CO2e direct d’entraînement retenues par le projet. Elle rend explicite l’ampleur de variation possible du proxy d’entraînement lorsque les exposants sur les paramètres et les tokens, ainsi que les facteurs contextuels, sont élargis.'],
@@ -5595,8 +5629,163 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         anthropic: 'Claude',
         xai: 'Grok',
         mistral: 'Mistral',
+        google: 'Google',
+        meta: 'Meta',
+        deepseek: 'DeepSeek',
+        alibaba: 'Alibaba',
+        microsoft: 'Microsoft',
+        ai21: 'AI21',
+        nvidia: 'NVIDIA',
       }};
       return mapping[provider] || provider || '';
+    }};
+    const renderInferenceTrainingTradeoffChart = () => {{
+      if (!inferenceTrainingTradeoffChart) return;
+      let rows = [];
+      try {{
+        rows = JSON.parse(inferenceTrainingTradeoffChart.getAttribute('data-cross-impact-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      const locale = uiText[currentLanguage.value];
+      const metricControl = document.querySelector('[data-cross-impact-control="metric-tab"].is-active');
+      const metric = metricControl ? metricControl.getAttribute('data-metric-value') : 'energy';
+      const config = metric === 'carbon'
+        ? {{
+            xKey: 'hour_carbon_gco2e',
+            yKey: 'direct_training_carbon_tco2e',
+            intro: {{
+              en: 'Positioning of models by central inference carbon over one standardized hour of use and retained direct training CO2e. Both axes use logarithmic scaling because the model catalog spans several orders of magnitude.',
+              fr: 'Positionnement des modèles selon leur carbone central d’inférence sur une heure d’usage standardisée et leur CO2e direct d’entraînement retenu. Les deux axes utilisent une échelle logarithmique car le catalogue couvre plusieurs ordres de grandeur.',
+            }},
+            xLabel: {{
+              en: 'Central inference carbon, gCO2e/h (log scale)',
+              fr: 'Carbone central d’inférence, gCO2e/h (échelle logarithmique)',
+            }},
+            yLabel: {{
+              en: 'Direct training CO2e, tCO2e (log scale)',
+              fr: 'CO2e direct d’entraînement, tCO2e (échelle logarithmique)',
+            }},
+            formatX: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kg` : `${{value.toFixed(1)}} g`,
+            formatY: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kt` : `${{value.toFixed(1)}} t`,
+            ariaLabel: {{
+              en: 'Inference versus training carbon chart',
+              fr: 'Graphique du carbone d’inférence versus entraînement',
+            }},
+          }}
+        : {{
+            xKey: 'hour_energy_wh',
+            yKey: 'direct_training_energy_wh',
+            intro: {{
+              en: 'Positioning of models by central inference energy over one standardized hour of use and retained direct training energy. Both axes use logarithmic scaling because the model catalog spans several orders of magnitude.',
+              fr: 'Positionnement des modèles selon leur énergie centrale d’inférence sur une heure d’usage standardisée et leur énergie d’entraînement retenue. Les deux axes utilisent une échelle logarithmique car le catalogue couvre plusieurs ordres de grandeur.',
+            }},
+            xLabel: {{
+              en: 'Central inference energy, Wh/h (log scale)',
+              fr: 'Énergie centrale d’inférence, Wh/h (échelle logarithmique)',
+            }},
+            yLabel: {{
+              en: 'Direct training energy, Wh (log scale)',
+              fr: 'Énergie directe d’entraînement, Wh (échelle logarithmique)',
+            }},
+            formatX: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kWh` : `${{value.toFixed(1)}} Wh`,
+            formatY: (value) => value >= 1e9 ? `${{(value / 1e9).toFixed(1)}} GWh` : value >= 1e6 ? `${{(value / 1e6).toFixed(1)}} MWh` : `${{value.toFixed(1)}} Wh`,
+            ariaLabel: {{
+              en: 'Inference versus training energy chart',
+              fr: 'Graphique de l’énergie d’inférence versus entraînement',
+            }},
+          }};
+      const points = rows
+        .map((row) => ({{
+          label: translateBenchmarkLabel(row.label, currentLanguage.value),
+          provider: row.provider || '',
+          providerLabel: providerDisplayName(row.provider || ''),
+          activeParameters: Number(row.active_parameters_billion || 0),
+          x: Number(row[config.xKey] || 0),
+          y: Number(row[config.yKey] || 0),
+        }}))
+        .filter((row) => row.x > 0 && row.y > 0);
+      if (!points.length) {{
+        inferenceTrainingTradeoffChart.innerHTML = `<p class="lead">${{locale.noUsableValue}}</p>`;
+        return;
+      }}
+      const providerOrder = Array.from(new Set(points.map((point) => point.provider))).sort((a, b) => providerDisplayName(a).localeCompare(providerDisplayName(b)));
+      const paletteValues = ['#243b63', '#8c7a5b', '#b85c38', '#3f5a49', '#6c5b7b', '#2f7f92', '#a33d5e', '#7a9e2f', '#b06c1f', '#4b5563'];
+      const palette = Object.fromEntries(providerOrder.map((provider, index) => [provider, paletteValues[index % paletteValues.length]]));
+      const width = 980;
+      const height = 640;
+      const padding = {{ top: 24, right: 24, bottom: 86, left: 92 }};
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const safeLog = (value) => Math.log10(Math.max(value, 1e-9));
+      const xMin = Math.min(...points.map((row) => row.x));
+      const xMax = Math.max(...points.map((row) => row.x));
+      const yMin = Math.min(...points.map((row) => row.y));
+      const yMax = Math.max(...points.map((row) => row.y));
+      const sizeMin = Math.min(...points.map((row) => row.activeParameters || 1));
+      const sizeMax = Math.max(...points.map((row) => row.activeParameters || 1));
+      const xMinLog = safeLog(xMin);
+      const xMaxLog = safeLog(xMax);
+      const yMinLog = safeLog(yMin);
+      const yMaxLog = safeLog(yMax);
+      const scaleX = (value) => padding.left + ((safeLog(value) - xMinLog) / Math.max(xMaxLog - xMinLog, 1e-9)) * plotWidth;
+      const scaleY = (value) => padding.top + plotHeight - ((safeLog(value) - yMinLog) / Math.max(yMaxLog - yMinLog, 1e-9)) * plotHeight;
+      const scaleR = (value) => {{
+        const safeValue = Math.max(value || 1, 1e-9);
+        return 4.5 + ((safeLog(safeValue) - safeLog(sizeMin || 1)) / Math.max(safeLog(sizeMax || 1) - safeLog(sizeMin || 1), 1e-9)) * 7.5;
+      }};
+      const tickValues = (min, max) => {{
+        const ticks = [];
+        const start = Math.floor(safeLog(min));
+        const end = Math.ceil(safeLog(max));
+        for (let exponent = start; exponent <= end; exponent += 1) {{
+          ticks.push(10 ** exponent);
+        }}
+        return ticks.filter((value) => value >= min && value <= max);
+      }};
+      const xGrid = tickValues(xMin, xMax).map((value) => {{
+        const x = scaleX(value);
+        return `
+          <line x1="${{x}}" y1="${{padding.top}}" x2="${{x}}" y2="${{padding.top + plotHeight}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{x}}" y="${{height - 18}}" text-anchor="middle" font-size="12" fill="#6c757d">${{config.formatX(value)}}</text>
+        `;
+      }}).join('');
+      const yGrid = tickValues(yMin, yMax).map((value) => {{
+        const y = scaleY(value);
+        return `
+          <line x1="${{padding.left}}" y1="${{y}}" x2="${{padding.left + plotWidth}}" y2="${{y}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{padding.left - 10}}" y="${{y + 4}}" text-anchor="end" font-size="12" fill="#6c757d">${{config.formatY(value)}}</text>
+        `;
+      }}).join('');
+      const dots = points.map((row) => {{
+        const cx = scaleX(row.x);
+        const cy = scaleY(row.y);
+        const radius = scaleR(row.activeParameters);
+        const fill = palette[row.provider] || '#495057';
+        return `
+          <circle cx="${{cx}}" cy="${{cy}}" r="${{radius}}" fill="${{fill}}" opacity="0.84"></circle>
+          <text x="${{cx + radius + 5}}" y="${{cy - radius - 3}}" font-size="12" fill="#212529">${{row.label}}</text>
+        `;
+      }}).join('');
+      const legend = providerOrder.map((provider, index) => `
+        <g transform="translate(${{padding.left + (index % 4) * 170}}, ${{height - 48 + Math.floor(index / 4) * 22}})">
+          <rect width="14" height="14" rx="3" fill="${{palette[provider] || '#495057'}}"></rect>
+          <text x="20" y="11" font-size="12" fill="#495057">${{providerDisplayName(provider)}}</text>
+        </g>
+      `).join('');
+      inferenceTrainingTradeoffChart.innerHTML = `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">${{config.intro[currentLanguage.value]}}</div>
+        <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{config.ariaLabel[currentLanguage.value]}}">
+          ${{xGrid}}
+          ${{yGrid}}
+          <line x1="${{padding.left}}" y1="${{padding.top + plotHeight}}" x2="${{padding.left + plotWidth}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          <line x1="${{padding.left}}" y1="${{padding.top}}" x2="${{padding.left}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          ${{dots}}
+          ${{legend}}
+          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 4}}" text-anchor="middle" font-size="13" fill="#495057">${{config.xLabel[currentLanguage.value]}}</text>
+          <text x="18" y="${{padding.top + plotHeight / 2}}" text-anchor="middle" font-size="13" fill="#495057" transform="rotate(-90 18 ${{padding.top + plotHeight / 2}})">${{config.yLabel[currentLanguage.value]}}</text>
+        </svg>
+      `;
     }};
     const renderReleaseTimelineChart = (container, attrName, config) => {{
       if (!container) return;
@@ -5745,6 +5934,17 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         fr: 'Graphique du carbone d’inférence par date de sortie du modèle',
       }},
     }});
+    crossImpactControls.forEach((control) => {{
+      control.addEventListener('click', () => {{
+        crossImpactControls.forEach((item) => {{
+          const isActive = item === control;
+          item.classList.toggle('is-active', isActive);
+          item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        }});
+        renderInferenceTrainingTradeoffChart();
+      }});
+    }});
+    renderInferenceTrainingTradeoffChart();
     const renderTrainingScatterLogChart = () => {{
       if (!trainingScatterLogChart) return;
       let rows = [];
