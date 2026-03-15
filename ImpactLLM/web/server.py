@@ -2283,6 +2283,17 @@ def render_model_detail_trigger(row):
     )
 
 
+def render_model_detail_inline_trigger(model_id, label):
+    model_key = str(model_id or "").strip()
+    if not model_key:
+        return f"<strong>{escape(label or 'n.d.')}</strong>"
+    return (
+        f'<button type="button" class="model-detail-inline-trigger" data-model-detail-key="{escape(model_key, quote=True)}">'
+        f"<strong>{escape(label or model_key)}</strong>"
+        f"</button>"
+    )
+
+
 def market_parameter_sort_value(row):
     for key in ("active_parameters_billion", "total_parameters_billion"):
         raw = str(row.get(key, "") or "").strip()
@@ -3318,7 +3329,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <p class="scope-note">Retained scope: only LLM inference externalities are included. Model training, software-system consumption, and ancillary infrastructure are excluded from the displayed estimate.</p>
           <p class="meta-inline">Evidence level: <strong>{escape(evidence.get('label', 'Unqualified'))}</strong></p>
           <p class="meta-inline">Method: <strong>{escape(method_label)}</strong></p>
-          <p class="meta-inline">Reference model: <strong>{escape(model_profile.get('model_id', parsed_payload.get('model_id', 'not specified')))}</strong>{' | Approx. active parameters: <strong>' + escape(format_parameter_billions(model_profile.get('active_parameters_billion'), is_estimated_parameter_status(model_profile.get('parameter_value_status')))) + '</strong>' if model_profile.get('active_parameters_billion') else ''} {render_analysis_entry_ref('parameters', analysis_bibliography_map)}</p>
+          <p class="meta-inline">Reference model: {render_model_detail_inline_trigger(model_profile.get('model_id', parsed_payload.get('model_id', 'not specified')), model_profile.get('model_id', parsed_payload.get('model_id', 'not specified')))}{' | Approx. active parameters: <strong>' + escape(format_parameter_billions(model_profile.get('active_parameters_billion'), is_estimated_parameter_status(model_profile.get('parameter_value_status')))) + '</strong>' if model_profile.get('active_parameters_billion') else ''} {render_analysis_entry_ref('parameters', analysis_bibliography_map)}</p>
           <p class="meta-inline">Electricity mix: <strong>{escape(country_mix.get('country_code', parsed_payload.get('country', 'not specified')))}</strong> <span class="method-basis">({escape(country_resolution_label)})</span>{' | ' + escape(country_mix.get('grid_carbon_intensity_gco2_per_kwh', '')) + ' gCO2e/kWh' if country_mix.get('grid_carbon_intensity_gco2_per_kwh') else ''} {render_analysis_entry_ref('mix', analysis_bibliography_map)}</p>
           {render_assumptions_summary(result)}
           {render_method_calculation_details(method_comparisons, analysis_bibliography_map)}
@@ -3767,6 +3778,23 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       font: inherit;
     }}
     .model-detail-trigger strong {{
+      color: var(--accent);
+      text-decoration: underline;
+      text-decoration-color: rgba(36, 59, 99, 0.22);
+      text-underline-offset: 0.14em;
+    }}
+    .model-detail-inline-trigger {{
+      display: inline;
+      padding: 0;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      vertical-align: baseline;
+    }}
+    .model-detail-inline-trigger strong {{
       color: var(--accent);
       text-decoration: underline;
       text-decoration-color: rgba(36, 59, 99, 0.22);
