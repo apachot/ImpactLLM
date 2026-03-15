@@ -64,7 +64,7 @@ The fourth family consists of cloud- or infrastructure-level accounting tools su
 Two broader lessons follow from the literature. First, the footprint of LLMs is multi-dimensional and should not be collapsed into one number \cite{rillig2023,li2025water,morrison2025}. Second, unit of analysis and system boundary matter as much as the numerical value itself \cite{ren2024}. The missing piece is therefore a reusable evidence layer that preserves this heterogeneity instead of hiding it.
 
 \section{Contribution and Data Layer}
-\emph{ImpactLLM} is organized around one core design principle: one reusable quantified value per record, with its source and comparability context. The current release contains 76 records spanning 11 core sources and four analytical phases: training, inference, infrastructure, and lifecycle. This iteration also expands the market-model catalog to 32 entries, now covering the latest Grok 1/2 variants alongside Claude 2 in addition to the previously tracked OpenAI and Mistral families, and it recomputes every inference and training column so the observatory data reflect the most recent parameter counts and screening assumptions. Each record stores at least a unique identifier, citation, year, analytical phase, impact category, metric name, value, unit, model or scope, geography, data type, source locator, source URL, and free-text note.
+\emph{ImpactLLM} is organized around one core design principle: one reusable quantified value per record, with its source and comparability context. The current release contains 76 records spanning 11 core sources and four analytical phases: training, inference, infrastructure, and lifecycle. This iteration also expands the market-model catalog to 38 entries, adding legacy Grok (1/2) and Claude 2 releases plus a curated set of GPT-era models such as Megatron-Turing NLG, Jurassic-1, Gopher, GLaM, LaMDA, and OPT to the previously tracked OpenAI and Mistral families. All inference and training columns were recomputed so the observatory data reflect those additional models and the most recent parameter inputs. Each record stores at least a unique identifier, citation, year, analytical phase, impact category, metric name, value, unit, model or scope, geography, data type, source locator, source URL, and free-text note.
 
 This structure separates three dimensions that are often conflated in narrative reviews: the observed phenomenon, the method used to produce the number, and the scope to which the number applies. It also supports a second metadata layer describing comparability-oriented fields such as unit of analysis, source type, uncertainty level, and applicability domain.
 
@@ -173,10 +173,10 @@ Figure \ref{fig:inference-release} follows the release sequence of OpenAI, Claud
 \label{fig:training-release}
 \end{figure}
 
-For completeness, Table \ref{tab:catalog-results} reports the current calculated values for all 32 market models tracked in the March 2026 release. The purpose of this table is documentary: it makes the observatory outputs directly inspectable in the paper, while the web interface remains the primary medium for interactive exploration.
+For completeness, Table \ref{tab:catalog-results} reports the current calculated values for all 38 market models tracked in the March 2026 release. The purpose of this table is documentary: it makes the observatory outputs directly inspectable in the paper, while the web interface remains the primary medium for interactive exploration.
 
 \begin{longtable}{|L{4.0cm}|L{2.0cm}|L{2.2cm}|L{1.7cm}|L{1.8cm}|}
-\caption{Calculated environmental indicators for the 32 market models currently tracked by ImpactLLM. Inference values correspond to the standardized one-hour scenario used in the observatory. Training values are multi-factor screening estimates.}\label{tab:catalog-results}\\
+\caption{Calculated environmental indicators for the 38 market models currently tracked by ImpactLLM. Inference values correspond to the standardized one-hour scenario used in the observatory. Training values are multi-factor screening estimates.}\label{tab:catalog-results}\\
 \hline
 Model & Inference Wh/h & Inference gCO$_2$e/h & Training GWh & Training ktCO$_2$e \\
 \hline
