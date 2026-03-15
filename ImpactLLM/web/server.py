@@ -6051,7 +6051,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       `;
     }};
     renderCountryMixChart();
-    const providerDisplayName = (provider) => {{
+    function providerDisplayName(provider) {{
       const mapping = {{
         openai: 'OpenAI',
         anthropic: 'Claude',
@@ -6066,28 +6066,32 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         nvidia: 'NVIDIA',
       }};
       return mapping[provider] || provider || '';
-    }};
-    const escapeHtml = (value) => String(value ?? '')
+    }}
+    function escapeHtml(value) {{
+      return String(value ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
-    const renderModelDetailRow = (label, value) => `
+    }}
+    function renderModelDetailRow(label, value) {{
+      return `
       <div class="model-detail-row">
         <span class="model-detail-label">${{escapeHtml(label)}}</span>
         <span class="model-detail-value">${{escapeHtml(value || 'n.d.')}}</span>
       </div>
     `;
-    const closeModelDetail = () => {{
+    }}
+    function closeModelDetail() {{
       if (!modelDetailDrawer || !modelDetailOverlay) return;
       modelDetailDrawer.classList.remove('is-open');
       modelDetailDrawer.setAttribute('aria-hidden', 'true');
       modelDetailOverlay.hidden = true;
       document.body.style.overflow = '';
       currentModelDetailKey = null;
-    }};
-    const renderModelDetail = (key) => {{
+    }}
+    function renderModelDetail(key) {{
       if (!modelDetailDrawer || !modelDetailOverlay || !modelDetailContent || !modelDetailTitle) return;
       const detail = modelDetailIndex[key];
       if (!detail) return;
@@ -6257,7 +6261,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       modelDetailDrawer.classList.add('is-open');
       modelDetailDrawer.setAttribute('aria-hidden', 'false');
       document.body.style.overflow = 'hidden';
-    }};
+    }}
     const renderInferenceTrainingTradeoffChart = () => {{
       if (!inferenceTrainingTradeoffChart) return;
       let rows = [];
