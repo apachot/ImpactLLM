@@ -49,7 +49,7 @@ LOGO_MARK_PATH = ROOT / "web" / "impactllm-mark.svg"
 REFERENCE_PAGE_TOKENS = 750.0
 DEFAULT_PROMPT_TOKENS = 1550.0
 PROJECT_PAPER_BIBTEX = """@misc{llm_environment_open_data_2026,
-  title = {ImpactLLM: An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models},
+  title = {ImpactLLM: An Open Tool for Estimating the Environmental Footprint of LLMs},
   author = {Pachot, Arnault and Petit, Thierry},
   year = {2026},
   month = mar,
@@ -1126,7 +1126,7 @@ def build_method_modal_body(method, analysis_refs=None):
               <p>\\[
               P^{{eff}}_c = P_t \\times F_{{ctx}} \\times F_{{srv}} \\times F_{{mod}} \\times F_{{arch}} = {format_scalar(detail.get('target_params'))} \\times {format_scalar(context_factor.get('central'))} \\times {format_scalar(serving_factor.get('central'))} \\times {format_scalar(modality_factor.get('central'))} \\times {format_scalar(architecture_factor.get('central'))} = {format_scalar(effective_params.get('central'))}
               \\]</p>
-              <p>Where <code>P_eff,c</code> is the central effective active-parameter proxy, <code>P_t</code> the retained raw active-parameter count, <code>F_ctx</code> the context-window factor, <code>F_srv</code> the serving-mode factor, <code>F_mod</code> the modality factor, and <code>F_arch</code> the architecture-overhead factor.</p>
+              <p class="notranslate">Where \\(P^{{eff}}_c\\) is the central effective active-parameter proxy, \\(P_t\\) the retained raw active-parameter count, \\(F_{{ctx}}\\) the context-window factor, \\(F_{{srv}}\\) the serving-mode factor, \\(F_{{mod}}\\) the modality factor, and \\(F_{{arch}}\\) the architecture-overhead factor.</p>
               <p>Central token factor:</p>
               <p>\\[
               F_{{tok,c}} = {format_scalar(token_factor.get('central'), 4)}
@@ -2497,7 +2497,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
             </span>
             <span class="paper-preview-caption">Preview the PDF and click to open it</span>
           </a>
-          <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em>ImpactLLM: An open tool for exploring and estimating the environmental footprint of large language models.</em> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">{app_url('/downloads/ImpactLLM_paper.pdf')}</a></p>
+          <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em>ImpactLLM: An open tool for estimating the environmental footprint of LLMs.</em> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">{app_url('/downloads/ImpactLLM_paper.pdf')}</a></p>
         </div>
       </section>
     </section>
@@ -2508,7 +2508,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         <div class="summary-body">
           <p>We work on responsible AI with a focus on methodological rigor, traceability, and real-world decision support. Our work combines scientific research, product design, and operational deployment to make AI systems more transparent, more accountable, and more useful in practice.</p>
           <p><strong>How to cite ImpactLLM</strong></p>
-          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">ImpactLLM: An open tool for exploring and estimating the environmental footprint of large language models.</a></em></p>
+          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">ImpactLLM: An open tool for estimating the environmental footprint of LLMs.</a></em></p>
           <p><strong>BibTeX</strong></p>
           <pre class="citation-block"><code>{escape(PROJECT_PAPER_BIBTEX)}</code></pre>
           <p><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Download PDF</a> | <a href="{app_url('/downloads/ImpactLLM_paper.bib')}">Download BibTeX entry</a></p>
@@ -2577,7 +2577,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     home_tab = f"""
     <section class="tab-panel is-active" id="tab-home-panel" data-tab-panel="home">
       <header class="hero">
-        <h1>An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models</h1>
+        <h1>An Open Tool for Estimating the Environmental Footprint of LLMs</h1>
       </header>
       <form class="panel" method="post" action="{app_url('/')}" id="estimate-form">
         <label for="description">Describe your application in natural language to obtain an inference estimate, its assumptions, and its source-linked calculation details.</label>
@@ -3819,7 +3819,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['This annex brings together the quantified reference material used in the interface, along with everyday comparison benchmarks and country factors used for carbon and water recalculation.', 'Cette annexe rassemble les sources quantitatives mobilisées dans l’interface, ainsi que des repères de comparaison du quotidien et les facteurs pays utilisés pour le recalcul du carbone et de l’eau.'],
       ['This table lists the third-party sources used when a provider does not publish the parameter count of a closed model. Estimated values are marked with `*` throughout the interface.', 'Ce tableau recense les sources tierces utilisées lorsqu’un fournisseur ne publie pas le nombre de paramètres d’un modèle fermé. Les valeurs estimées sont signalées par `*` dans toute l’interface.'],
       ['Download PDF', 'Télécharger le PDF'],
-      ['An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models', 'Un outil libre pour explorer et estimer l’empreinte environnementale des grands modèles de langage'],
+      ['An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models', 'Un outil libre pour estimer l’empreinte environnementale des LLMs'],
+      ['An Open Tool for Estimating the Environmental Footprint of LLMs', 'Un outil libre pour estimer l’empreinte environnementale des LLMs'],
       ['Inference-only estimate based on source-linked scientific indicators and a traceable screening calculation.', 'Estimation limitée à l’inférence, fondée sur des indicateurs scientifiques reliés aux sources et un calcul de screening traçable.'],
       ['Inférence-only estimate based on source-linked scientific indicators and a traceable screening calculation.', 'Estimation limitée à l’inférence, fondée sur des indicateurs scientifiques reliés aux sources et un calcul de screening traçable.'],
       ['ImpactLLM is designed as a transparent screening tool, not as a black-box score. The current release starts from source-linked inference anchors, then exposes a bounded multi-factor proxy rather than a hidden single-number score.', 'ImpactLLM est conçu comme un outil transparent de screening, et non comme un score boîte noire. La version actuelle part d’ancrages d’inférence reliés aux sources, puis expose un proxy multi-facteurs borné plutôt qu’un score unique caché.'],
@@ -3839,7 +3840,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Download BibTeX entry', 'Télécharger l’entrée BibTeX'],
       ['Download the associated scientific publication PDF', 'Télécharger le PDF de la publication scientifique associée'],
       ['ImpactLLM', 'ImpactLLM'],
-      ['An open tool for exploring and estimating the environmental footprint of large language models.', 'Un outil libre pour explorer et estimer l’empreinte environnementale des grands modèles de langage.'],
+      ['An open tool for exploring and estimating the environmental footprint of large language models.', 'Un outil libre pour estimer l’empreinte environnementale des LLMs.'],
+      ['An open tool for estimating the environmental footprint of LLMs.', 'Un outil libre pour estimer l’empreinte environnementale des LLMs.'],
       ['Describe your application in natural language to obtain an inference estimate, its assumptions, and its source-linked calculation details.', 'Décrivez votre application en langage naturel pour obtenir une estimation d’inférence, ses hypothèses et les détails du calcul reliés aux sources.'],
       ['Install and run the project', 'Installer et lancer le projet'],
       ['GitHub repository.', 'Dépôt GitHub.'],
@@ -3896,7 +3898,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Applied parameter factor:', 'Facteur de paramètres appliqué :'],
       ['Extrapolated energy for one inference unit:', 'Énergie extrapolée pour une unité d’inférence :'],
       ['Central effective active parameters:', 'Paramètres actifs effectifs centraux :'],
-      ['Where <code>P_eff,c</code> is the central effective active-parameter proxy, <code>P_t</code> the retained raw active-parameter count, <code>F_ctx</code> the context-window factor, <code>F_srv</code> the serving-mode factor, <code>F_mod</code> the modality factor, and <code>F_arch</code> the architecture-overhead factor.', 'Où <code>P_eff,c</code> désigne le proxy central de paramètres actifs effectifs, <code>P_t</code> le nombre brut de paramètres actifs retenu, <code>F_ctx</code> le facteur de fenêtre de contexte, <code>F_srv</code> le facteur de mode de service, <code>F_mod</code> le facteur de modalité, et <code>F_arch</code> le facteur d’overhead d’architecture.'],
+      ['Where \\(P^{{eff}}_c\\) is the central effective active-parameter proxy, \\(P_t\\) the retained raw active-parameter count, \\(F_{{ctx}}\\) the context-window factor, \\(F_{{srv}}\\) the serving-mode factor, \\(F_{{mod}}\\) the modality factor, and \\(F_{{arch}}\\) the architecture-overhead factor.', 'Où \\(P^{{eff}}_c\\) désigne le proxy central de paramètres actifs effectifs, \\(P_t\\) le nombre brut de paramètres actifs retenu, \\(F_{{ctx}}\\) le facteur de fenêtre de contexte, \\(F_{{srv}}\\) le facteur de mode de service, \\(F_{{mod}}\\) le facteur de modalité, et \\(F_{{arch}}\\) le facteur d’overhead d’architecture.'],
       ['Central token factor:', 'Facteur central de tokens :'],
       ['Central per-request energy:', 'Énergie centrale par requête :'],
       ['The displayed range widens the scaling exponent and the contextual overhead factors between low, central, and high scenarios.', 'La plage affichée élargit l’exposant de mise à l’échelle et les facteurs d’overhead contextuels entre les scénarios bas, central et haut.'],
@@ -4108,6 +4110,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       applyTextTranslations(normalized);
       renderModelsChart();
       renderTrainingChart();
+      if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {{
+        window.MathJax.typesetPromise();
+      }}
     }}
     function hasEnoughDescriptionContent() {{
       return (descriptionInput?.value || '').trim().length >= MIN_DESCRIPTION_LENGTH;

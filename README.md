@@ -1,6 +1,6 @@
 # ImpactLLM
 
-ImpactLLM is an open tool for exploring and estimating the environmental footprint of large language models.
+ImpactLLM is an open tool for estimating the environmental footprint of LLMs.
 
 The project is designed as a transparent screening tool rather than a black-box score. It builds on indicators published in the scientific and technical literature, links each estimate back to its sources, keeps assumptions visible, and favors a traceable, auditable calculation logic.
 
