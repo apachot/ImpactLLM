@@ -2176,20 +2176,19 @@ def market_parameter_sort_value(row):
     return ""
 
 
-def render_market_models_table(records):
+def build_market_models_view(records):
     rows = build_market_model_predictions(records)
-    if not rows:
-        return ""
     standard_scenario = rows[0].get("standard_scenario", {}) if rows else {}
     requests_per_hour = standard_scenario.get("requests_per_hour", 0)
     reading_wpm = standard_scenario.get("reading_words_per_minute", 0)
     words_per_token = standard_scenario.get("words_per_token", 0)
     chart_rows = []
+    params_chart_rows = []
+    scatter_chart_rows = []
     body = []
     for row in rows:
-        parameter_title = escape(str(row.get("parameter_source", "") or "Source not specified"))
-        server_title = escape(str(row.get("server_country_source", "") or "Source not specified"))
-        estimation_title = escape(str(row.get("estimation_country_source", "") or "Source not specified"))
+        architecture_notes = str(row.get("architecture_notes", "") or "").lower()
+        serving_mode = str(row.get("serving_mode", "") or "").strip().lower()
         screening_method = row.get("screening_method_id", "") or "n.d."
         hour_energy_range = {
             "low": to_float(row.get("screening_per_hour_energy_wh_low"), default=0.0),
@@ -2224,6 +2223,32 @@ def render_market_models_table(records):
                 "page_energy_wh": hour_energy_range["central"],
                 "prompt_carbon_gco2e": hour_carbon_range["central"],
                 "page_carbon_gco2e": hour_carbon_range["central"],
+            }
+        )
+        effective_params = to_float(row.get("screening_effective_active_parameters_billion_central"), default=0.0)
+        params_chart_rows.append(
+            {
+                "label": row.get("display_name", row.get("model_id", "")),
+                "provider": row.get("provider", ""),
+                "kind": "model",
+                "effective_active_parameters_billion": effective_params,
+            }
+        )
+        scatter_chart_rows.append(
+            {
+                "label": row.get("display_name", row.get("model_id", "")),
+                "provider": row.get("provider", ""),
+                "active_parameters_billion": to_float(row.get("active_parameters_billion"), default=0.0),
+                "effective_active_parameters_billion": effective_params,
+                "context_window_tokens": to_float(row.get("context_window_tokens"), default=0.0),
+                "serving_mode_score": 1.0 if serving_mode == "closed" else 0.5 if serving_mode == "hybrid" else 0.0,
+                "vision_support_score": 1.0 if parse_market_bool(row.get("vision_support")) else 0.0,
+                "moe_score": 1.0 if "moe" in architecture_notes else 0.0,
+                "reasoning_score": 1.0 if "reason" in architecture_notes else 0.0,
+                "hour_energy_wh": hour_energy_range["central"],
+                "hour_carbon_gco2e": hour_carbon_range["central"],
+                "request_energy_wh": request_energy_range["central"],
+                "request_carbon_gco2e": request_carbon_range["central"],
             }
         )
         body.append(
@@ -2281,7 +2306,23 @@ def render_market_models_table(records):
             },
         ]
     )
+    return {
+        "rows": rows,
+        "requests_per_hour": requests_per_hour,
+        "reading_wpm": reading_wpm,
+        "words_per_token": words_per_token,
+        "chart_rows": chart_rows,
+        "params_chart_rows": params_chart_rows,
+        "scatter_chart_rows": scatter_chart_rows,
+        "table_body": "".join(body),
+    }
 
+
+def render_market_models_charts(records):
+    view = build_market_models_view(records)
+    rows = view["rows"]
+    if not rows:
+        return ""
     return f"""
     <section class="panel reference-panel">
       <div class="summary-header">
@@ -2294,10 +2335,39 @@ def render_market_models_table(records):
         <button type="button" class="chart-tab-button is-active" data-model-chart-control="metric-tab" data-metric-value="energy" aria-selected="true">Energy</button>
         <button type="button" class="chart-tab-button" data-model-chart-control="metric-tab" data-metric-value="carbon" aria-selected="false">Carbon</button>
       </div>
-      <div id="models-impact-chart" class="models-impact-chart" data-chart-rows='{escape(json.dumps(chart_rows, ensure_ascii=False), quote=True)}'></div>
-      <p class="summary-intro models-chart-note">The chart below shows the estimated central values for all catalog models under a standardized inference scenario corresponding to <strong>1 hour of active use</strong>: <strong>{requests_per_hour} interactions/hour</strong>, <strong>1000 input tokens</strong>, <strong>550 output tokens</strong>, and one LLM request per use. The hourly pace is derived from an average reading speed of <strong>{reading_wpm} words/min</strong> (<a href="https://www.sciencedirect.com/science/article/pii/S0749596X19300786" target="_blank" rel="noopener noreferrer">Brysbaert, 2019</a>) and a project convention of <strong>1 token ≈ {words_per_token} word</strong>.</p>
+      <div id="models-impact-chart" class="models-impact-chart" data-chart-rows='{escape(json.dumps(view["chart_rows"], ensure_ascii=False), quote=True)}'></div>
+      <p class="summary-intro models-chart-note">The chart below shows the estimated central values for all catalog models under a standardized inference scenario corresponding to <strong>1 hour of active use</strong>: <strong>{view["requests_per_hour"]} interactions/hour</strong>, <strong>1000 input tokens</strong>, <strong>550 output tokens</strong>, and one LLM request per use. The hourly pace is derived from an average reading speed of <strong>{view["reading_wpm"]} words/min</strong> (<a href="https://www.sciencedirect.com/science/article/pii/S0749596X19300786" target="_blank" rel="noopener noreferrer">Brysbaert, 2019</a>) and a project convention of <strong>1 token ≈ {view["words_per_token"]} word</strong>.</p>
       <p class="summary-intro models-chart-note models-benchmark-note">Benchmarks integrated into the chart, all expressed over one hour or rescaled to a comparable order of magnitude: household electricity from <a href="https://www.extension.purdue.edu/extmedia/4H/4-H-1015-W.pdf" target="_blank" rel="noopener noreferrer">Purdue Extension</a> measurements (fluorescent lamp ≈ 9.3 Wh over 1 h; laptop ≈ 32 Wh over 1 h) and a 1500 W electric space heater rescaled here to <strong>4.1 minutes</strong> to obtain ≈ <strong>103.5 Wh</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario; for carbon, an average gasoline car benchmark derived from the <a href="https://theicct.org/publication/electric-cars-life-cycle-analysis-emissions-europe-jul25/" target="_blank" rel="noopener noreferrer">ICCT (2025)</a> factor retained by the project (235 gCO2e/km), here rescaled to <strong>0.17 km</strong> to obtain ≈ <strong>40.0 gCO2e</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario.</p>
     </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Positioning</div>
+          <h3>Inference model landscape</h3>
+        </div>
+      </div>
+      <p class="summary-intro">This landscape view clusters the catalog models from the characteristics retained by the project for inference screening: active and effective parameters, context window, serving mode, modality support, architecture notes, and central energy and carbon outputs. Nearby points indicate models with similar retained screening profiles, not a simple one-metric ranking.</p>
+      <div id="carbon-params-scatter-chart" class="models-impact-chart" data-scatter-chart-rows='{escape(json.dumps(view["scatter_chart_rows"], ensure_ascii=False), quote=True)}'></div>
+    </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Positioning</div>
+          <h3>Inference carbon vs. parameter count</h3>
+        </div>
+      </div>
+      <p class="summary-intro">This complementary view places models by retained active parameter count on the horizontal axis and by central inference carbon over one hour on the vertical axis, using logarithmic scaling on both axes.</p>
+      <div id="carbon-params-linear-chart" class="models-impact-chart" data-scatter-chart-rows='{escape(json.dumps(view["scatter_chart_rows"], ensure_ascii=False), quote=True)}'></div>
+    </section>
+    """
+
+
+def render_market_models_table(records):
+    view = build_market_models_view(records)
+    rows = view["rows"]
+    if not rows:
+        return ""
+    return f"""
     <section class="panel reference-panel">
       <div class="summary-header">
         <div>
@@ -2324,7 +2394,7 @@ def render_market_models_table(records):
               <th><button type="button" class="sort-button" data-sort-table="market-models-table" data-sort-index="7" data-sort-type="number">Carbon / request</button></th>
             </tr>
           </thead>
-          <tbody>{''.join(body)}</tbody>
+          <tbody>{view["table_body"]}</tbody>
         </table>
       </div>
       <p class="summary-intro">`Server country` describes the published information about where the service is hosted or, for open-weight models, the fact that hosting depends on deployment. `Retained country` is the country actually used to recalculate CO2 via the electricity mix. When the exact country is not published, the project uses an explicit screening proxy rather than presenting a location as certain.</p>
@@ -2361,22 +2431,36 @@ def format_training_estimate(value, unit):
     return f"{value:,.2f} {unit}".replace(",", " ")
 
 
-def render_training_models_table(records):
+def build_training_models_view(records):
     rows = build_training_market_predictions(records)
-    if not rows:
-        return ""
     chart_rows = []
+    scatter_chart_rows = []
     body = []
     for row in rows:
+        architecture_notes = str(row.get("architecture_notes", "") or "").lower()
+        serving_mode = str(row.get("serving_mode", "") or "").strip().lower()
         results = row.get("training_results_by_id") or {}
         direct_energy = results.get("direct_training_energy") or {}
         direct_carbon = results.get("direct_training_carbon") or {}
-        lifecycle_water = results.get("creation_lifecycle_water") or {}
         chart_rows.append(
             {
                 "label": row.get("display_name", row.get("model_id", "")),
                 "provider": row.get("provider", ""),
                 "kind": "model",
+                "direct_training_energy_wh": float(direct_energy.get("value", 0.0) or 0.0),
+                "direct_training_carbon_tco2e": float(direct_carbon.get("value", 0.0) or 0.0),
+            }
+        )
+        scatter_chart_rows.append(
+            {
+                "label": row.get("display_name", row.get("model_id", "")),
+                "provider": row.get("provider", ""),
+                "active_parameters_billion": to_float(row.get("active_parameters_billion"), default=0.0),
+                "context_window_tokens": to_float(row.get("context_window_tokens"), default=0.0),
+                "serving_mode_score": 1.0 if serving_mode == "closed" else 0.5 if serving_mode == "hybrid" else 0.0,
+                "vision_support_score": 1.0 if parse_market_bool(row.get("vision_support")) else 0.0,
+                "moe_score": 1.0 if "moe" in architecture_notes else 0.0,
+                "reasoning_score": 1.0 if "reason" in architecture_notes else 0.0,
                 "direct_training_energy_wh": float(direct_energy.get("value", 0.0) or 0.0),
                 "direct_training_carbon_tco2e": float(direct_carbon.get("value", 0.0) or 0.0),
             }
@@ -2410,7 +2494,19 @@ def render_training_models_table(records):
             },
         ]
     )
+    return {
+        "rows": rows,
+        "chart_rows": chart_rows,
+        "scatter_chart_rows": scatter_chart_rows,
+        "table_body": "".join(body),
+    }
 
+
+def render_training_models_charts(records):
+    view = build_training_models_view(records)
+    rows = view["rows"]
+    if not rows:
+        return ""
     return f"""
     <section class="panel reference-panel">
       <div class="summary-header">
@@ -2424,9 +2520,38 @@ def render_training_models_table(records):
         <button type="button" class="chart-tab-button is-active" data-training-chart-control="metric-tab" data-metric-value="direct_training_energy" aria-selected="true">Energy</button>
         <button type="button" class="chart-tab-button" data-training-chart-control="metric-tab" data-metric-value="direct_training_carbon" aria-selected="false">Carbon</button>
       </div>
-      <div id="training-impact-chart" class="models-impact-chart" data-training-chart-rows='{escape(json.dumps(chart_rows, ensure_ascii=False), quote=True)}'></div>
+      <div id="training-impact-chart" class="models-impact-chart" data-training-chart-rows='{escape(json.dumps(view["chart_rows"], ensure_ascii=False), quote=True)}'></div>
       <p class="summary-intro models-benchmark-note">Benchmarks integrated into the chart: household electricity for <strong>3,132 households</strong> over one year of domestic use, i.e. ≈ <strong>7.83 GWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>34,842.8 tCO2e</strong> for <strong>1,651 full flights</strong>. These two comparison points are aligned with the order of magnitude of Claude Opus 4.1 in the training chart.</p>
     </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Positioning</div>
+          <h3>Training model landscape</h3>
+        </div>
+      </div>
+      <p class="summary-intro">This landscape view clusters the catalog models from the characteristics retained by the project for training screening: active parameters, context window, serving mode, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.</p>
+      <div id="training-carbon-params-scatter-chart" class="models-impact-chart" data-training-scatter-chart-rows='{escape(json.dumps(view["scatter_chart_rows"], ensure_ascii=False), quote=True)}'></div>
+    </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Positioning</div>
+          <h3>Training carbon vs. parameter count</h3>
+        </div>
+      </div>
+      <p class="summary-intro">This complementary view places models by retained active parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.</p>
+      <div id="training-carbon-params-log-chart" class="models-impact-chart" data-training-scatter-chart-rows='{escape(json.dumps(view["scatter_chart_rows"], ensure_ascii=False), quote=True)}'></div>
+    </section>
+    """
+
+
+def render_training_models_table(records):
+    view = build_training_models_view(records)
+    rows = view["rows"]
+    if not rows:
+        return ""
+    return f"""
     <section class="panel reference-panel">
       <div class="summary-header">
         <div>
@@ -2449,7 +2574,7 @@ def render_training_models_table(records):
               <th><button type="button" class="sort-button" data-sort-table="training-models-table" data-sort-index="3" data-sort-type="number">Direct training CO2e</button></th>
             </tr>
           </thead>
-          <tbody>{''.join(body)}</tbody>
+          <tbody>{view["table_body"]}</tbody>
         </table>
       </div>
       <p class="summary-intro">`*` indicates an estimated parameter count rather than a provider-published value.</p>
@@ -2581,8 +2706,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         """
 
     all_records = load_records()
-    market_models_block = render_market_models_table(all_records)
-    training_models_block = render_training_models_table(all_records)
+    market_models_chart_block = render_market_models_charts(all_records)
+    market_models_table_block = render_market_models_table(all_records)
+    training_models_chart_block = render_training_models_charts(all_records)
+    training_models_table_block = render_training_models_table(all_records)
     bibliography_tab = render_bibliography_tab()
     method_tab = f"""
     <section class="tab-panel" id="tab-method-panel" data-tab-panel="method">
@@ -2727,7 +2854,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     <section class="tab-panel" id="tab-observatory-panel" data-tab-panel="observatory">
       <div class="observatory-layout">
         <aside class="observatory-sidebar">
-          <nav class="subtabs" aria-label="Referential">
+          <nav class="subtabs" aria-label="Observatory">
             <button type="button" class="subtab-button is-active" data-subtab-target="observatory-inference">Inference</button>
             <button type="button" class="subtab-button" data-subtab-target="observatory-training">Training</button>
           </nav>
@@ -2735,11 +2862,33 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
 
         <div class="observatory-content">
           <section class="subtab-panel is-active" id="subtab-observatory-inference-panel" data-subtab-panel="observatory-inference">
-            {market_models_block}
+            {market_models_chart_block}
           </section>
 
           <section class="subtab-panel" id="subtab-observatory-training-panel" data-subtab-panel="observatory-training">
-            {training_models_block}
+            {training_models_chart_block}
+          </section>
+        </div>
+      </div>
+    </section>
+    """
+    referential_tab = f"""
+    <section class="tab-panel" id="tab-referential-panel" data-tab-panel="referential">
+      <div class="observatory-layout">
+        <aside class="observatory-sidebar">
+          <nav class="subtabs" aria-label="Referential">
+            <button type="button" class="subtab-button is-active" data-subtab-target="referential-inference">Inference</button>
+            <button type="button" class="subtab-button" data-subtab-target="referential-training">Training</button>
+          </nav>
+        </aside>
+
+        <div class="observatory-content">
+          <section class="subtab-panel is-active" id="subtab-referential-inference-panel" data-subtab-panel="referential-inference">
+            {market_models_table_block}
+          </section>
+
+          <section class="subtab-panel" id="subtab-referential-training-panel" data-subtab-panel="referential-training">
+            {training_models_table_block}
           </section>
         </div>
       </div>
@@ -3805,7 +3954,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       <button type="button" class="tab-button logo-tab is-active" data-tab-target="home" aria-label="Home">
         <span class="nav-logo" aria-hidden="true">{render_logo_markup()}</span>
       </button>
-      <button type="button" class="tab-button" data-tab-target="observatory">Referential</button>
+      <button type="button" class="tab-button" data-tab-target="observatory">Observatory</button>
+      <button type="button" class="tab-button" data-tab-target="referential">Referential</button>
       <button type="button" class="tab-button" data-tab-target="method">Method</button>
       <button type="button" class="tab-button" data-tab-target="bibliography">Sources</button>
       <button type="button" class="tab-button" data-tab-target="contact">About</button>
@@ -3820,6 +3970,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
 
     {home_tab}
     {observatory_tab}
+    {referential_tab}
     {method_tab}
     {contact_tab}
     {bibliography_tab}
@@ -3838,14 +3989,23 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const searchInputs = Array.from(document.querySelectorAll('[data-table-search]'));
     const sortButtons = Array.from(document.querySelectorAll('[data-sort-table]'));
     const modelsChart = document.getElementById('models-impact-chart');
+    const paramsChart = document.getElementById('params-impact-chart');
+    const scatterChart = document.getElementById('carbon-params-scatter-chart');
+    const scatterLinearChart = document.getElementById('carbon-params-linear-chart');
     const chartControls = Array.from(document.querySelectorAll('[data-model-chart-control="metric-tab"]'));
     const trainingChart = document.getElementById('training-impact-chart');
+    const trainingScatterChart = document.getElementById('training-carbon-params-scatter-chart');
+    const trainingScatterLogChart = document.getElementById('training-carbon-params-log-chart');
     const trainingChartControls = Array.from(document.querySelectorAll('[data-training-chart-control="metric-tab"]'));
     const LANGUAGE_STORAGE_KEY = 'llm-environment-language';
     const TAB_HASH_PREFIX = '#tab-';
     const MIN_DESCRIPTION_LENGTH = 50;
     const textNodeOriginals = new WeakMap();
     const currentLanguage = {{ value: 'en' }};
+    const tabDefaultSubtabs = {{
+      observatory: 'observatory-inference',
+      referential: 'referential-inference',
+    }};
     const uiText = {{
       en: {{
         title: 'ImpactLLM',
@@ -3916,7 +4076,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }};
     const textReplacements = [
       ['Home', 'Accueil'],
-      ['Observatory', 'Référentiel'],
+      ['Observatory', 'Observatoire'],
       ['Referential', 'Référentiel'],
       ['Method', 'Méthode'],
       ['Documentation', 'Documentation'],
@@ -3932,6 +4092,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Bibliography', 'Sources'],
       ['Inference', 'Inférence'],
       ['Training', 'Entraînement'],
+      ['Positioning', 'Positionnement'],
       ['Estimate application', 'Estimer l’application'],
       ['Estimating...', 'Estimation...'],
       ['How to cite ImpactLLM', 'Comment citer ImpactLLM'],
@@ -4035,6 +4196,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['The chart below shows the estimated central values for all catalog models under a standardized inference scenario corresponding to 1 hour of active use: 34.6 interactions/hour, 1000 input tokens, 550 output tokens, and one LLM request per use. The hourly pace is derived from an average reading speed of 238.0 words/min (Brysbaert, 2019) and a project convention of 1 token ≈ 0.75 word.', 'Le graphique ci-dessous présente les valeurs centrales estimées pour tous les modèles du catalogue dans un scénario d’inférence standardisé correspondant à 1 heure d’usage actif : 34,6 interactions/heure, 1000 tokens en entrée, 550 tokens en sortie et une requête LLM par usage. Le rythme horaire est dérivé d’une vitesse moyenne de lecture de 238,0 mots/min (Brysbaert, 2019) et d’une convention du projet de 1 token ≈ 0,75 mot.'],
       ['Benchmarks integrated into the chart, all expressed over one hour or rescaled to a comparable order of magnitude: household electricity from Purdue Extension measurements (fluorescent lamp ≈ 9.3 Wh over 1 h; laptop ≈ 32 Wh over 1 h) and a 1500 W electric space heater rescaled here to <strong>4.1 minutes</strong> to obtain ≈ <strong>103.5 Wh</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario; for carbon, an average gasoline car benchmark derived from the ICCT (2025) factor retained by the project (235 gCO2e/km), here rescaled to <strong>0.17 km</strong> to obtain ≈ <strong>40.0 gCO2e</strong>, close to the order of magnitude of Claude Opus 4.1 in the inference scenario.', 'Repères intégrés au graphique, tous exprimés sur une heure ou redimensionnés à un ordre de grandeur comparable : consommation électrique domestique issue des mesures de Purdue Extension (lampe fluorescente ≈ 9,3 Wh sur 1 h ; ordinateur portable ≈ 32 Wh sur 1 h) et radiateur électrique de 1500 W ramené ici à <strong>4,1 minutes</strong> pour obtenir ≈ <strong>103,5 Wh</strong>, proche de l’ordre de grandeur de Claude Opus 4.1 dans le scénario d’inférence ; pour le carbone, un repère de voiture essence moyenne dérivé du facteur ICCT (2025) retenu par le projet (235 gCO2e/km), ici ramené à <strong>0,17 km</strong> pour obtenir ≈ <strong>40,0 gCO2e</strong>, proche de l’ordre de grandeur de Claude Opus 4.1 dans le scénario d’inférence.'],
       ['Average gasoline car for 0.17 km', 'Voiture essence moyenne sur 0,17 km'],
+      ['Inference model landscape', 'Paysage des modèles en inférence'],
+      ['Inference carbon vs. parameter count', 'Carbone d’inférence vs nombre de paramètres'],
+      ['Training model landscape', 'Paysage des modèles en entraînement'],
+      ['Training carbon vs. parameter count', 'Carbone d’entraînement vs nombre de paramètres'],
+      ['This landscape view clusters the catalog models from the characteristics retained by the project for inference screening: active and effective parameters, context window, serving mode, modality support, architecture notes, and central energy and carbon outputs. Nearby points indicate models with similar retained screening profiles, not a simple one-metric ranking.', 'Cette vue de paysage regroupe les modèles du catalogue à partir des caractéristiques retenues par le projet pour le screening en inférence : paramètres actifs et effectifs, fenêtre de contexte, mode de service, support multimodal, notes d’architecture, ainsi que sorties centrales d’énergie et de carbone. Des points proches indiquent des profils de screening retenus similaires, et non un classement sur une seule métrique.'],
+      ['This complementary view places models by retained active parameter count on the horizontal axis and by central inference carbon over one hour on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres actifs retenus sur l’axe horizontal et leur carbone central d’inférence sur une heure sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
+      ['This landscape view clusters the catalog models from the characteristics retained by the project for training screening: active parameters, context window, serving mode, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.', 'Cette vue de paysage regroupe les modèles du catalogue à partir des caractéristiques retenues par le projet pour le screening en entraînement : paramètres actifs, fenêtre de contexte, mode de service, support multimodal, notes d’architecture, ainsi que sorties centrales d’énergie et de carbone d’entraînement. Des points proches indiquent des profils de screening retenus similaires plutôt qu’un classement direct sur un seul axe.'],
+      ['This complementary view places models by retained active parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres actifs retenus sur l’axe horizontal et leur CO2e direct d’entraînement sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
       ['3. Carbon derivation from the country mix', '3. Dérivation du carbone à partir du mix pays'],
       ['Carbon is not reused directly from the literature. It is derived from extrapolated energy using the retained country electricity mix, here', 'Le carbone n’est pas réutilisé directement depuis la littérature. Il est dérivé de l’énergie extrapolée à partir du mix électrique du pays retenu, ici'],
       ['The unit result retained for this method then leads to the following annualized values: energy', 'Le résultat unitaire retenu pour cette méthode conduit ensuite aux valeurs annualisées suivantes : énergie'],
@@ -4250,7 +4419,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       updateExamplePrompts(normalized);
       applyTextTranslations(normalized);
       renderModelsChart();
+      renderParamsChart();
+      renderScatterChart();
+      renderScatterLinearChart();
       renderTrainingChart();
+      renderTrainingScatterChart();
+      renderTrainingScatterLogChart();
       if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {{
         window.MathJax.typesetPromise();
       }}
@@ -4328,8 +4502,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       if (!hash.startsWith(TAB_HASH_PREFIX)) return false;
       const target = hash.slice(TAB_HASH_PREFIX.length);
       if (!target) return false;
-      if (target.startsWith('observatory-')) {{
-        activateTab('observatory');
+      const parentTab = target.includes('-') ? target.split('-')[0] : '';
+      if (parentTab && tabDefaultSubtabs[parentTab]) {{
+        activateTab(parentTab);
         return activateSubtab(target);
       }}
       return activateTab(target);
@@ -4338,9 +4513,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       button.addEventListener('click', function () {{
         const target = button.getAttribute('data-tab-target');
         activateTab(target);
-        if (target === 'observatory') {{
-          const activeSubtab = document.querySelector('[data-subtab-target].is-active');
-          setTabHash(activeSubtab ? activeSubtab.getAttribute('data-subtab-target') : 'observatory-inference');
+        if (tabDefaultSubtabs[target]) {{
+          const activeSubtab = document.querySelector(`[data-subtab-target^="${{target}}-"].is-active`);
+          const nextSubtab = activeSubtab ? activeSubtab.getAttribute('data-subtab-target') : tabDefaultSubtabs[target];
+          activateSubtab(nextSubtab);
+          setTabHash(nextSubtab);
           return;
         }}
         setTabHash(target);
@@ -4349,7 +4526,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     subtabButtons.forEach((button) => {{
       button.addEventListener('click', function () {{
         const target = button.getAttribute('data-subtab-target');
-        activateTab('observatory');
+        const parentTab = target.includes('-') ? target.split('-')[0] : 'observatory';
+        activateTab(parentTab);
         activateSubtab(target);
         setTabHash(target);
       }});
@@ -4505,6 +4683,408 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }});
     }});
     renderModelsChart();
+    const formatParamsChartValue = (value) => {{
+      if (value >= 1000) return `${{(value / 1000).toFixed(2)}} T active params`;
+      if (value >= 100) return `${{value.toFixed(0)}}B active params`;
+      if (value >= 10) return `${{value.toFixed(1)}}B active params`;
+      return `${{value.toFixed(3)}}B active params`;
+    }};
+    const buildParamsChartMarkup = (rows) => {{
+      const locale = uiText[currentLanguage.value];
+      if (!rows.length) {{
+        return `<p class="lead">${{locale.noData}}</p>`;
+      }}
+      const sorted = rows
+        .map((row) => ({{
+          label: translateBenchmarkLabel(row.label, currentLanguage.value),
+          provider: row.provider,
+          value: Number(row.effective_active_parameters_billion || row.value || 0),
+          kind: row.kind || 'model',
+        }}))
+        .filter((row) => row.value > 0)
+        .sort((a, b) => b.value - a.value);
+      if (!sorted.length) {{
+        return `<p class="lead">${{locale.noUsableValue}}</p>`;
+      }}
+      const maxValue = sorted[0].value || 1;
+      const barHeight = 28;
+      const rowGap = 22;
+      const chartWidth = 980;
+      const labelWidth = 320;
+      const valueWidth = 170;
+      const barStart = labelWidth + 12;
+      const barMaxWidth = chartWidth - labelWidth - valueWidth - 40;
+      const chartHeight = sorted.length * (barHeight + rowGap) + 24;
+      const bars = sorted.map((row, index) => {{
+        const y = 12 + index * (barHeight + rowGap);
+        const width = Math.max(2, (row.value / maxValue) * barMaxWidth);
+        return `
+          <text x="0" y="${{y + 18}}" font-size="15" fill="#212529">${{row.label}}</text>
+          <text x="0" y="${{y + 34}}" font-size="13" fill="#6c757d">${{row.provider}}</text>
+          <rect x="${{barStart}}" y="${{y}}" width="${{width}}" height="${{barHeight}}" rx="4" fill="#3f5a49"></rect>
+          <text x="${{barStart + width + 10}}" y="${{y + 18}}" font-size="14" fill="#212529">${{formatParamsChartValue(row.value)}}</text>
+        `;
+      }}).join('');
+      const intro = currentLanguage.value === 'fr'
+        ? 'Comparaison des valeurs centrales de <strong>P_eff,c</strong> retenues par le proxy multi-facteurs pour les modèles du catalogue.'
+        : 'Comparison of the central <strong>P_eff,c</strong> values retained by the multi-factor proxy for catalog models.';
+      return `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">${{intro}}</div>
+        <svg viewBox="0 0 ${{chartWidth}} ${{chartHeight}}" role="img" aria-label="Effective active-parameter proxy chart">${{bars}}</svg>
+      `;
+    }};
+    const renderParamsChart = () => {{
+      if (!paramsChart) return;
+      let rows = [];
+      try {{
+        rows = JSON.parse(paramsChart.getAttribute('data-params-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      paramsChart.innerHTML = buildParamsChartMarkup(rows);
+    }};
+    renderParamsChart();
+    const normalizeFeatureMatrix = (rows, featureKeys) => {{
+      const matrix = rows.map((row) => featureKeys.map((key) => Number(row[key] || 0)));
+      const means = featureKeys.map((_, columnIndex) => matrix.reduce((sum, vector) => sum + vector[columnIndex], 0) / Math.max(matrix.length, 1));
+      const stdevs = featureKeys.map((_, columnIndex) => {{
+        const variance = matrix.reduce((sum, vector) => sum + ((vector[columnIndex] - means[columnIndex]) ** 2), 0) / Math.max(matrix.length - 1, 1);
+        return Math.sqrt(variance) || 1;
+      }});
+      return matrix.map((vector) => vector.map((value, columnIndex) => (value - means[columnIndex]) / stdevs[columnIndex]));
+    }};
+    const covarianceMatrix = (matrix) => {{
+      const dimension = matrix[0]?.length || 0;
+      const covariance = Array.from({{ length: dimension }}, () => Array.from({{ length: dimension }}, () => 0));
+      matrix.forEach((vector) => {{
+        for (let i = 0; i < dimension; i += 1) {{
+          for (let j = 0; j < dimension; j += 1) {{
+            covariance[i][j] += vector[i] * vector[j];
+          }}
+        }}
+      }});
+      const divisor = Math.max(matrix.length - 1, 1);
+      for (let i = 0; i < dimension; i += 1) {{
+        for (let j = 0; j < dimension; j += 1) {{
+          covariance[i][j] /= divisor;
+        }}
+      }}
+      return covariance;
+    }};
+    const matrixVectorMultiply = (matrix, vector) => matrix.map((row) => row.reduce((sum, value, index) => sum + value * vector[index], 0));
+    const normalizeVector = (vector) => {{
+      const norm = Math.sqrt(vector.reduce((sum, value) => sum + (value ** 2), 0)) || 1;
+      return vector.map((value) => value / norm);
+    }};
+    const dotProduct = (a, b) => a.reduce((sum, value, index) => sum + value * b[index], 0);
+    const powerIteration = (matrix, orthogonalTo = null) => {{
+      const dimension = matrix.length;
+      let vector = normalizeVector(Array.from({{ length: dimension }}, (_, index) => 1 + index));
+      for (let iteration = 0; iteration < 40; iteration += 1) {{
+        let next = matrixVectorMultiply(matrix, vector);
+        if (orthogonalTo) {{
+          const projection = dotProduct(next, orthogonalTo);
+          next = next.map((value, index) => value - projection * orthogonalTo[index]);
+        }}
+        vector = normalizeVector(next);
+      }}
+      return vector;
+    }};
+    const projectRows = (matrix, vectors) => matrix.map((row) => vectors.map((vector) => dotProduct(row, vector)));
+    const kMeans = (matrix, k) => {{
+      const centroids = matrix.slice(0, k).map((row) => row.slice());
+      const assignments = Array.from({{ length: matrix.length }}, () => 0);
+      for (let iteration = 0; iteration < 12; iteration += 1) {{
+        matrix.forEach((row, rowIndex) => {{
+          let bestIndex = 0;
+          let bestDistance = Number.POSITIVE_INFINITY;
+          centroids.forEach((centroid, centroidIndex) => {{
+            const distance = row.reduce((sum, value, index) => sum + ((value - centroid[index]) ** 2), 0);
+            if (distance < bestDistance) {{
+              bestDistance = distance;
+              bestIndex = centroidIndex;
+            }}
+          }});
+          assignments[rowIndex] = bestIndex;
+        }});
+        centroids.forEach((_, centroidIndex) => {{
+          const members = matrix.filter((_, rowIndex) => assignments[rowIndex] === centroidIndex);
+          if (!members.length) return;
+          centroids[centroidIndex] = centroids[centroidIndex].map((_, dimensionIndex) => members.reduce((sum, row) => sum + row[dimensionIndex], 0) / members.length);
+        }});
+      }}
+      return assignments;
+    }};
+    const buildLandscapeMarkup = (rows, config) => {{
+      const locale = uiText[currentLanguage.value];
+      const points = rows.map((row) => ({{
+        label: translateBenchmarkLabel(row.label, currentLanguage.value),
+        provider: row.provider,
+        features: row,
+      }}));
+      if (!points.length) {{
+        return `<p class="lead">${{locale.noData}}</p>`;
+      }}
+      const matrix = normalizeFeatureMatrix(points.map((point) => point.features), config.featureKeys);
+      if (!matrix.length || !matrix[0]?.length) {{
+        return `<p class="lead">${{locale.noUsableValue}}</p>`;
+      }}
+      const covariance = covarianceMatrix(matrix);
+      const pc1 = powerIteration(covariance);
+      const pc2 = powerIteration(covariance, pc1);
+      const coordinates = projectRows(matrix, [pc1, pc2]);
+      const clusters = kMeans(matrix, Math.min(4, Math.max(2, Math.floor(Math.sqrt(points.length / 2)))));
+      const palette = ['#3f5a49', '#8c7a5b', '#243b63', '#b85c38'];
+      const width = 980;
+      const height = 620;
+      const padding = {{ top: 24, right: 24, bottom: 58, left: 58 }};
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const xs = coordinates.map((point) => point[0]);
+      const ys = coordinates.map((point) => point[1]);
+      const xMin = Math.min(...xs);
+      const xMax = Math.max(...xs);
+      const yMin = Math.min(...ys);
+      const yMax = Math.max(...ys);
+      const scaleX = (value) => padding.left + ((value - xMin) / Math.max(xMax - xMin, 1e-9)) * plotWidth;
+      const scaleY = (value) => padding.top + plotHeight - ((value - yMin) / Math.max(yMax - yMin, 1e-9)) * plotHeight;
+      const renderedPoints = points.map((point, index) => {{
+        const cx = scaleX(coordinates[index][0]);
+        const cy = scaleY(coordinates[index][1]);
+        const fill = palette[clusters[index] % palette.length];
+        return `
+          <circle cx="${{cx}}" cy="${{cy}}" r="6" fill="${{fill}}" opacity="0.9"></circle>
+          <text x="${{cx + 8}}" y="${{cy - 8}}" font-size="12" fill="#212529">${{point.label}}</text>
+        `;
+      }}).join('');
+      const legend = palette.slice(0, Math.max(...clusters) + 1).map((color, index) => `
+        <g transform="translate(${{padding.left + index * 130}}, ${{height - 28}})">
+          <rect width="14" height="14" rx="3" fill="${{color}}"></rect>
+          <text x="20" y="11" font-size="12" fill="#495057">${{currentLanguage.value === 'fr' ? `Cluster ${{index + 1}}` : `Cluster ${{index + 1}}`}}</text>
+        </g>
+      `).join('');
+      return `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">${{config.intro[currentLanguage.value]}}</div>
+        <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{config.ariaLabel}}">
+          <rect x="${{padding.left}}" y="${{padding.top}}" width="${{plotWidth}}" height="${{plotHeight}}" fill="rgba(140, 122, 91, 0.04)" stroke="rgba(0,0,0,0.08)"></rect>
+          ${{renderedPoints}}
+          ${{legend}}
+          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 4}}" text-anchor="middle" font-size="13" fill="#495057">${{config.axisLabels.x[currentLanguage.value]}}</text>
+          <text x="18" y="${{padding.top + plotHeight / 2}}" text-anchor="middle" font-size="13" fill="#495057" transform="rotate(-90 18 ${{padding.top + plotHeight / 2}})">${{config.axisLabels.y[currentLanguage.value]}}</text>
+        </svg>
+      `;
+    }};
+    const renderScatterChart = () => {{
+      if (!scatterChart) return;
+      let rows = [];
+      try {{
+        rows = JSON.parse(scatterChart.getAttribute('data-scatter-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      scatterChart.innerHTML = buildLandscapeMarkup(rows, {{
+        featureKeys: [
+          'active_parameters_billion',
+          'effective_active_parameters_billion',
+          'context_window_tokens',
+          'serving_mode_score',
+          'vision_support_score',
+          'moe_score',
+          'reasoning_score',
+          'hour_energy_wh',
+          'hour_carbon_gco2e',
+          'request_energy_wh',
+          'request_carbon_gco2e',
+        ],
+        intro: {{
+          en: 'This clustered landscape is derived from the full inference screening profile retained by the project. Points that appear close share similar combinations of size, context, serving assumptions, modality support, architecture notes, and central impact outputs.',
+          fr: 'Cette carte groupée est dérivée du profil complet de screening retenu par le projet pour l’inférence. Les points proches partagent des combinaisons similaires de taille, contexte, hypothèses de service, support multimodal, notes d’architecture et impacts centraux.'
+        }},
+        axisLabels: {{
+          x: {{ en: 'Landscape dimension 1 (composite projection)', fr: 'Dimension 1 du paysage (projection composite)' }},
+          y: {{ en: 'Landscape dimension 2 (composite projection)', fr: 'Dimension 2 du paysage (projection composite)' }},
+        }},
+        ariaLabel: 'Inference model landscape chart',
+      }});
+    }};
+    renderScatterChart();
+    const renderScatterLinearChart = () => {{
+      if (!scatterLinearChart) return;
+      let rows = [];
+      try {{
+        rows = JSON.parse(scatterLinearChart.getAttribute('data-scatter-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      const locale = uiText[currentLanguage.value];
+      const points = rows
+        .map((row) => ({{
+          label: translateBenchmarkLabel(row.label, currentLanguage.value),
+          provider: row.provider,
+          x: Number(row.active_parameters_billion || 0),
+          y: Number(row.hour_carbon_gco2e || 0),
+        }}))
+        .filter((row) => row.x > 0 && row.y > 0);
+      if (!points.length) {{
+        scatterLinearChart.innerHTML = `<p class="lead">${{locale.noUsableValue}}</p>`;
+        return;
+      }}
+      const padding = {{ top: 24, right: 24, bottom: 58, left: 74 }};
+      const width = 980;
+      const height = 620;
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const safeLog = (value) => Math.log10(Math.max(value, 1e-9));
+      const xMin = Math.min(...points.map((row) => row.x));
+      const xMax = Math.max(...points.map((row) => row.x));
+      const yMin = Math.min(...points.map((row) => row.y));
+      const yMax = Math.max(...points.map((row) => row.y));
+      const xMinLog = safeLog(xMin);
+      const xMaxLog = safeLog(xMax);
+      const yMinLog = safeLog(yMin);
+      const yMaxLog = safeLog(yMax);
+      const scaleX = (value) => padding.left + ((safeLog(value) - xMinLog) / Math.max(xMaxLog - xMinLog, 1e-9)) * plotWidth;
+      const scaleY = (value) => padding.top + plotHeight - ((safeLog(value) - yMinLog) / Math.max(yMaxLog - yMinLog, 1e-9)) * plotHeight;
+      const tickValues = (min, max) => {{
+        const ticks = [];
+        const start = Math.floor(safeLog(min));
+        const end = Math.ceil(safeLog(max));
+        for (let exponent = start; exponent <= end; exponent += 1) {{
+          ticks.push(10 ** exponent);
+        }}
+        return ticks.filter((value) => value >= min && value <= max);
+      }};
+      const xGrid = tickValues(xMin, xMax).map((value) => {{
+        const x = scaleX(value);
+        const label = value >= 1000 ? `${{(value / 1000).toFixed(1)}}T` : `${{value >= 10 ? value.toFixed(0) : value.toFixed(1)}}B`;
+        return `
+          <line x1="${{x}}" y1="${{padding.top}}" x2="${{x}}" y2="${{padding.top + plotHeight}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{x}}" y="${{height - 18}}" text-anchor="middle" font-size="12" fill="#6c757d">${{label}}</text>
+        `;
+      }}).join('');
+      const yGrid = tickValues(yMin, yMax).map((value) => {{
+        const y = scaleY(value);
+        const label = value >= 1000 ? `${{(value / 1000).toFixed(1)}} kg` : `${{value.toFixed(1)}} g`;
+        return `
+          <line x1="${{padding.left}}" y1="${{y}}" x2="${{padding.left + plotWidth}}" y2="${{y}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{padding.left - 10}}" y="${{y + 4}}" text-anchor="end" font-size="12" fill="#6c757d">${{label}}</text>
+        `;
+      }}).join('');
+      const dots = points.map((row) => {{
+        const cx = scaleX(row.x);
+        const cy = scaleY(row.y);
+        return `
+          <circle cx="${{cx}}" cy="${{cy}}" r="5.5" fill="#243b63" opacity="0.9"></circle>
+          <text x="${{cx + 8}}" y="${{cy - 8}}" font-size="12" fill="#212529">${{row.label}}</text>
+        `;
+      }}).join('');
+      const intro = currentLanguage.value === 'fr'
+        ? 'Positionnement des modèles selon leurs paramètres actifs retenus et leur carbone central d’inférence sur une heure, en échelle logarithmique.'
+        : 'Positioning of models by retained active parameter count and central inference carbon over one hour, on logarithmic axes.';
+      const xLabel = currentLanguage.value === 'fr' ? 'Paramètres actifs retenus' : 'Retained active parameters';
+      const yLabel = currentLanguage.value === 'fr' ? 'Carbone d’inférence central, gCO2e/h' : 'Central inference carbon, gCO2e/h';
+      scatterLinearChart.innerHTML = `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">${{intro}}</div>
+        <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="Inference carbon versus parameter count chart">
+          ${{xGrid}}
+          ${{yGrid}}
+          <line x1="${{padding.left}}" y1="${{padding.top + plotHeight}}" x2="${{padding.left + plotWidth}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          <line x1="${{padding.left}}" y1="${{padding.top}}" x2="${{padding.left}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          ${{dots}}
+          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 4}}" text-anchor="middle" font-size="13" fill="#495057">${{xLabel}}</text>
+          <text x="18" y="${{padding.top + plotHeight / 2}}" text-anchor="middle" font-size="13" fill="#495057" transform="rotate(-90 18 ${{padding.top + plotHeight / 2}})">${{yLabel}}</text>
+        </svg>
+      `;
+    }};
+    renderScatterLinearChart();
+    const renderTrainingScatterLogChart = () => {{
+      if (!trainingScatterLogChart) return;
+      let rows = [];
+      try {{
+        rows = JSON.parse(trainingScatterLogChart.getAttribute('data-training-scatter-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      const locale = uiText[currentLanguage.value];
+      const points = rows
+        .map((row) => ({{
+          label: translateBenchmarkLabel(row.label, currentLanguage.value),
+          provider: row.provider,
+          x: Number(row.active_parameters_billion || 0),
+          y: Number(row.direct_training_carbon_tco2e || 0),
+        }}))
+        .filter((row) => row.x > 0 && row.y > 0);
+      if (!points.length) {{
+        trainingScatterLogChart.innerHTML = `<p class="lead">${{locale.noUsableValue}}</p>`;
+        return;
+      }}
+      const padding = {{ top: 24, right: 24, bottom: 58, left: 84 }};
+      const width = 980;
+      const height = 620;
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const safeLog = (value) => Math.log10(Math.max(value, 1e-9));
+      const xMin = Math.min(...points.map((row) => row.x));
+      const xMax = Math.max(...points.map((row) => row.x));
+      const yMin = Math.min(...points.map((row) => row.y));
+      const yMax = Math.max(...points.map((row) => row.y));
+      const xMinLog = safeLog(xMin);
+      const xMaxLog = safeLog(xMax);
+      const yMinLog = safeLog(yMin);
+      const yMaxLog = safeLog(yMax);
+      const scaleX = (value) => padding.left + ((safeLog(value) - xMinLog) / Math.max(xMaxLog - xMinLog, 1e-9)) * plotWidth;
+      const scaleY = (value) => padding.top + plotHeight - ((safeLog(value) - yMinLog) / Math.max(yMaxLog - yMinLog, 1e-9)) * plotHeight;
+      const tickValues = (min, max) => {{
+        const ticks = [];
+        const start = Math.floor(safeLog(min));
+        const end = Math.ceil(safeLog(max));
+        for (let exponent = start; exponent <= end; exponent += 1) {{
+          ticks.push(10 ** exponent);
+        }}
+        return ticks.filter((value) => value >= min && value <= max);
+      }};
+      const xGrid = tickValues(xMin, xMax).map((value) => {{
+        const x = scaleX(value);
+        const label = value >= 1000 ? `${{(value / 1000).toFixed(1)}}T` : `${{value >= 10 ? value.toFixed(0) : value.toFixed(1)}}B`;
+        return `
+          <line x1="${{x}}" y1="${{padding.top}}" x2="${{x}}" y2="${{padding.top + plotHeight}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{x}}" y="${{height - 18}}" text-anchor="middle" font-size="12" fill="#6c757d">${{label}}</text>
+        `;
+      }}).join('');
+      const yGrid = tickValues(yMin, yMax).map((value) => {{
+        const y = scaleY(value);
+        const label = value >= 1000 ? `${{(value / 1000).toFixed(1)}} kt` : `${{value.toFixed(1)}} t`;
+        return `
+          <line x1="${{padding.left}}" y1="${{y}}" x2="${{padding.left + plotWidth}}" y2="${{y}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{padding.left - 10}}" y="${{y + 4}}" text-anchor="end" font-size="12" fill="#6c757d">${{label}}</text>
+        `;
+      }}).join('');
+      const dots = points.map((row) => {{
+        const cx = scaleX(row.x);
+        const cy = scaleY(row.y);
+        return `
+          <circle cx="${{cx}}" cy="${{cy}}" r="5.5" fill="#8c7a5b" opacity="0.9"></circle>
+          <text x="${{cx + 8}}" y="${{cy - 8}}" font-size="12" fill="#212529">${{row.label}}</text>
+        `;
+      }}).join('');
+      const intro = currentLanguage.value === 'fr'
+        ? 'Positionnement des modèles selon leurs paramètres actifs retenus et leur CO2e direct d’entraînement, en échelle logarithmique.'
+        : 'Positioning of models by retained active parameter count and direct training CO2e, on logarithmic axes.';
+      const xLabel = currentLanguage.value === 'fr' ? 'Paramètres actifs retenus' : 'Retained active parameters';
+      const yLabel = currentLanguage.value === 'fr' ? 'CO2e direct d’entraînement, tCO2e' : 'Direct training CO2e, tCO2e';
+      trainingScatterLogChart.innerHTML = `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">${{intro}}</div>
+        <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="Training carbon versus parameter count chart">
+          ${{xGrid}}
+          ${{yGrid}}
+          <line x1="${{padding.left}}" y1="${{padding.top + plotHeight}}" x2="${{padding.left + plotWidth}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          <line x1="${{padding.left}}" y1="${{padding.top}}" x2="${{padding.left}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          ${{dots}}
+          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 4}}" text-anchor="middle" font-size="13" fill="#495057">${{xLabel}}</text>
+          <text x="18" y="${{padding.top + plotHeight / 2}}" text-anchor="middle" font-size="13" fill="#495057" transform="rotate(-90 18 ${{padding.top + plotHeight / 2}})">${{yLabel}}</text>
+        </svg>
+      `;
+    }};
     const formatTrainingChartValue = (value, metric) => {{
       if (metric === 'direct_training_energy') {{
         if (value >= 1_000_000_000) return `${{(value / 1_000_000_000).toFixed(1)}} GWh`;
@@ -4577,6 +5157,36 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }}
       trainingChart.innerHTML = buildTrainingChartMarkup(rows, metric);
     }};
+    const renderTrainingScatterChart = () => {{
+      if (!trainingScatterChart) return;
+      let rows = [];
+      try {{
+        rows = JSON.parse(trainingScatterChart.getAttribute('data-training-scatter-chart-rows') || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      trainingScatterChart.innerHTML = buildLandscapeMarkup(rows, {{
+        featureKeys: [
+          'active_parameters_billion',
+          'context_window_tokens',
+          'serving_mode_score',
+          'vision_support_score',
+          'moe_score',
+          'reasoning_score',
+          'direct_training_energy_wh',
+          'direct_training_carbon_tco2e',
+        ],
+        intro: {{
+          en: 'This clustered landscape is derived from the full training screening profile retained by the project. Nearby points indicate models with similar retained combinations of size, context, serving assumptions, architecture notes, and central training outcomes.',
+          fr: 'Cette carte groupée est dérivée du profil complet de screening retenu par le projet pour l’entraînement. Les points proches indiquent des modèles aux combinaisons retenues similaires de taille, contexte, hypothèses de service, notes d’architecture et résultats centraux d’entraînement.'
+        }},
+        axisLabels: {{
+          x: {{ en: 'Landscape dimension 1 (composite projection)', fr: 'Dimension 1 du paysage (projection composite)' }},
+          y: {{ en: 'Landscape dimension 2 (composite projection)', fr: 'Dimension 2 du paysage (projection composite)' }},
+        }},
+        ariaLabel: 'Training model landscape chart',
+      }});
+    }};
     trainingChartControls.forEach((control) => {{
       control.addEventListener('click', () => {{
         trainingChartControls.forEach((item) => {{
@@ -4588,6 +5198,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }});
     }});
     renderTrainingChart();
+    renderTrainingScatterChart();
     applyLanguage(preferredLanguage());
   </script>
 </body>
