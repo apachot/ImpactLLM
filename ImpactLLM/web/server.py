@@ -6103,6 +6103,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
     }}
+    function normalizeModelDetailKey(value) {{
+      return String(value ?? '')
+        .toLowerCase()
+        .replace(/[\\s\\-_.:,/();]/g, '');
+    }}
     function renderModelDetailRow(label, value) {{
       return `
       <div class="model-detail-row">
@@ -6110,6 +6115,28 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         <span class="model-detail-value">${{escapeHtml(value || 'n.d.')}}</span>
       </div>
     `;
+    }}
+    function resolveModelDetail(key) {{
+      if (!key) return null;
+      if (modelDetailIndex[key]) return [key, modelDetailIndex[key]];
+      const normalizedKey = normalizeModelDetailKey(key);
+      const entries = Object.entries(modelDetailIndex);
+      for (const [candidateKey, detail] of entries) {{
+        if (normalizeModelDetailKey(candidateKey) === normalizedKey) return [candidateKey, detail];
+        if (normalizeModelDetailKey(detail.model_id || '') === normalizedKey) return [candidateKey, detail];
+        if (normalizeModelDetailKey(detail.display_name || '') === normalizedKey) return [candidateKey, detail];
+      }}
+      for (const [candidateKey, detail] of entries) {{
+        const candidateValues = [
+          normalizeModelDetailKey(candidateKey),
+          normalizeModelDetailKey(detail.model_id || ''),
+          normalizeModelDetailKey(detail.display_name || ''),
+        ];
+        if (candidateValues.some((value) => value && (value.includes(normalizedKey) || normalizedKey.includes(value)))) {{
+          return [candidateKey, detail];
+        }}
+      }}
+      return null;
     }}
     function closeModelDetail() {{
       if (!modelDetailDrawer || !modelDetailOverlay) return;
@@ -6121,8 +6148,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }}
     function renderModelDetail(key) {{
       if (!modelDetailDrawer || !modelDetailOverlay || !modelDetailContent || !modelDetailTitle) return;
-      const detail = modelDetailIndex[key];
-      if (!detail) return;
+      const resolved = resolveModelDetail(key);
+      if (!resolved) return;
+      const [resolvedKey, detail] = resolved;
       const text = currentLanguage.value === 'fr'
         ? {{
             overview: 'Vue d’ensemble',
@@ -6284,7 +6312,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <ul class="model-detail-source-list">${{sourcesMarkup || `<li><span>${{currentLanguage.value === 'fr' ? 'Aucune source disponible.' : 'No source available.'}}</span></li>`}}</ul>
         </section>
       `;
-      currentModelDetailKey = key;
+      currentModelDetailKey = resolvedKey;
       modelDetailOverlay.hidden = false;
       modelDetailDrawer.classList.add('is-open');
       modelDetailDrawer.setAttribute('aria-hidden', 'false');
