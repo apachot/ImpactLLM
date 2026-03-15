@@ -52,7 +52,7 @@ LOGO_MARK_PATH = ROOT / "web" / "impactllm-mark.svg"
 REFERENCE_PAGE_TOKENS = 750.0
 DEFAULT_PROMPT_TOKENS = 1550.0
 PROJECT_PAPER_BIBTEX = """@misc{llm_environment_open_data_2026,
-  title = {ImpactLLM Observatory: An Open Observatory for the Environmental Footprint of LLMs},
+  title = {ImpactLLM: An Open Observatory and Screening Method for the Environmental Footprint of LLMs},
   author = {Pachot, Arnault and Petit, Thierry},
   year = {2026},
   month = mar,
@@ -2990,23 +2990,16 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <p><strong>5. A research-oriented estimator.</strong></p>
           <p data-i18n-html="method-research-body">The result is an auditable estimate intended for comparison, software design, and methodological discussion. It is useful precisely because the assumptions, factors, and retained sources remain visible and inspectable.</p>
 
-          <p><strong>Related papers</strong></p>
+          <p><strong>Scientific paper</strong></p>
           <div class="paper-preview-grid">
             <a class="paper-preview-card" href="{app_url('/downloads/ImpactLLM_paper.pdf')}" target="_blank" rel="noopener noreferrer" aria-label="Open the scientific paper PDF">
               <span class="paper-preview-frame">
                 <img src="{app_url('/downloads/ImpactLLM_paper_preview.png')}" alt="Preview of the first page of the ImpactLLM scientific paper" loading="lazy">
               </span>
-              <span class="paper-preview-caption">Observatory paper PDF</span>
-            </a>
-            <a class="paper-preview-card" href="{app_url('/downloads/ImpactLLM_paper_methodology.pdf')}" target="_blank" rel="noopener noreferrer" aria-label="Open the methodology paper PDF">
-              <span class="paper-preview-frame">
-                <img src="{app_url('/downloads/ImpactLLM_paper_methodology_preview.png')}" alt="Preview of the first page of the ImpactLLM methodology paper" loading="lazy">
-              </span>
-              <span class="paper-preview-caption">Methodology paper PDF</span>
+              <span class="paper-preview-caption">ImpactLLM paper PDF</span>
             </a>
           </div>
-          <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em>ImpactLLM Observatory: An Open Observatory for the Environmental Footprint of LLMs.</em> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">{app_url('/downloads/ImpactLLM_paper.pdf')}</a></p>
-          <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em>Transparent Screening for LLM Inference and Training Impacts.</em> <a href="{app_url('/downloads/ImpactLLM_paper_methodology.pdf')}">{app_url('/downloads/ImpactLLM_paper_methodology.pdf')}</a></p>
+          <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em>ImpactLLM: An Open Observatory and Screening Method for the Environmental Footprint of LLMs.</em> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">{app_url('/downloads/ImpactLLM_paper.pdf')}</a></p>
         </div>
       </section>
     </section>
@@ -3017,13 +3010,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         <div class="summary-body">
           <p>We work on responsible AI with a focus on methodological rigor, traceability, and real-world decision support. Our work combines scientific research, product design, and operational deployment to make AI systems more transparent, more accountable, and more useful in practice.</p>
           <p><strong>How to cite ImpactLLM</strong></p>
-          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">ImpactLLM Observatory: An Open Observatory for the Environmental Footprint of LLMs.</a></em></p>
-          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em><a href="{app_url('/downloads/ImpactLLM_paper_methodology.pdf')}">Transparent Screening for LLM Inference and Training Impacts.</a></em></p>
+          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">ImpactLLM: An Open Observatory and Screening Method for the Environmental Footprint of LLMs.</a></em></p>
           <p><strong>BibTeX</strong></p>
           <pre class="citation-block"><code>{escape(PROJECT_PAPER_BIBTEX)}</code></pre>
-          <pre class="citation-block"><code>{escape(METHODOLOGY_PAPER_BIBTEX)}</code></pre>
-          <p><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Download main paper PDF</a> | <a href="{app_url('/downloads/ImpactLLM_paper.bib')}">Download main paper BibTeX</a></p>
-          <p><a href="{app_url('/downloads/ImpactLLM_paper_methodology.pdf')}">Download methodology paper PDF</a> | <a href="{app_url('/downloads/ImpactLLM_paper_methodology.bib')}">Download methodology paper BibTeX</a></p>
+          <p><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Download paper PDF</a> | <a href="{app_url('/downloads/ImpactLLM_paper.bib')}">Download paper BibTeX</a></p>
           <p><strong>GitHub repository</strong></p>
           <p>The project repository is available on GitHub: <a href="https://github.com/apachot/ImpactLLM" target="_blank" rel="noreferrer">https://github.com/apachot/ImpactLLM</a>.</p>
           <p><strong>License</strong></p>

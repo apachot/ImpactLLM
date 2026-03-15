@@ -21,11 +21,11 @@
   linkcolor=black,
   citecolor=black,
   urlcolor=blue,
-  pdftitle={ImpactLLM Observatory: An Open Observatory for the Environmental Footprint of LLMs},
+  pdftitle={ImpactLLM: An Open Observatory and Screening Method for the Environmental Footprint of LLMs},
   pdfauthor={Arnault Pachot and Thierry Petit}
 }
 
-\title{ImpactLLM Observatory:\\An Open Observatory for the Environmental Footprint of LLMs}
+\title{ImpactLLM:\\An Open Observatory and Screening Method for the Environmental Footprint of LLMs}
 \author{Arnault Pachot \and Thierry Petit}
 \date{March 14, 2026}
 
@@ -66,7 +66,7 @@ The fourth family consists of cloud- or infrastructure-level accounting tools su
 Two broader lessons follow from the literature. First, the footprint of LLMs is multi-dimensional and should not be collapsed into one number \cite{rillig2023,li2025water,morrison2025}. Second, unit of analysis and system boundary matter as much as the numerical value itself \cite{ren2024}. The missing piece is therefore a reusable evidence layer that preserves this heterogeneity instead of hiding it.
 
 \section{Contribution and Data Layer}
-\emph{ImpactLLM Observatory} is organized around one core design principle: one reusable quantified value per record, with its source and comparability context. The current release contains 76 records spanning 11 core sources and four analytical phases: training, inference, infrastructure, and lifecycle. This iteration also expands the market-model catalog to 41 entries, adding legacy Grok (1/2) and Claude 2 releases plus a curated set of GPT-era models such as Megatron-Turing NLG, Jurassic-1, Gopher, GLaM, LaMDA, and OPT to the previously tracked OpenAI and Mistral families. All inference and training columns were recomputed so the observatory data reflect those additional models and the most recent parameter inputs. Each record stores at least a unique identifier, citation, year, analytical phase, impact category, metric name, value, unit, model or scope, geography, data type, source locator, source URL, and free-text note.
+\emph{ImpactLLM} is organized around one core design principle: one reusable quantified value per record, with its source and comparability context. The current release contains 76 records spanning 11 core sources and four analytical phases: training, inference, infrastructure, and lifecycle. This iteration also expands the market-model catalog to 41 entries, adding legacy Grok (1/2) and Claude 2 releases plus a curated set of GPT-era models such as Megatron-Turing NLG, Jurassic-1, Gopher, GLaM, LaMDA, and OPT to the previously tracked OpenAI and Mistral families. All inference and training columns were recomputed so the observatory data reflect those additional models and the most recent parameter inputs. Each record stores at least a unique identifier, citation, year, analytical phase, impact category, metric name, value, unit, model or scope, geography, data type, source locator, source URL, and free-text note.
 
 This structure separates three dimensions that are often conflated in narrative reviews: the observed phenomenon, the method used to produce the number, and the scope to which the number applies. It also supports a second metadata layer describing comparability-oriented fields such as unit of analysis, source type, uncertainty level, and applicability domain.
 
@@ -75,7 +75,60 @@ The same evidence base is exposed through four reuse layers: a tabular dataset, 
 This observatory angle matters because, to our knowledge, openly accessible infrastructures that jointly provide (i) source-level environmental indicators for LLMs, (ii) comparative views of current models, and (iii) an application-oriented inference screening interface remain rare. Existing tools often provide either instrumentation, or estimation, or datasets, but not all three within one openly inspectable workflow.
 
 
-\noindent The screening proxies themselves are described in full in the companion paper \emph{Transparent Screening for LLM Inference and Training Impacts}; the remainder of this article focuses on the resulting observatory outputs.
+\section{Inference Screening Method}
+The main practical question addressed by the tool is straightforward: given a software feature using an LLM, can we produce an inference estimate that is useful for screening and comparison when direct provider telemetry is absent?
+
+The current answer is deliberately limited. The estimator is \emph{inference-only}. It excludes model training, embodied impacts, application-side software consumption, and ancillary infrastructure from the displayed result. This is not because those dimensions are unimportant, but because the available inference anchors are structured enough to support a transparent screening method, whereas mixing them with broader lifecycle terms would blur the meaning of the result.
+
+The design objective is also practical speed. Instead of asking users to fill a large technical form, the web interface starts from a natural-language description such as ``We use GPT-4o-mini for customer support, around 4{,}000 uses per month in France.'' A parser then maps this text to a compact scenario with model, request type, approximate tokens, usage volume, and country assumptions. The output is therefore fast to obtain, but every inferred parameter remains visible to the user and can be inspected or challenged.
+
+The current market-model release follows five rules.
+\begin{itemize}
+\item It starts from an observed literature anchor rather than from provider claims. The retained prompt-energy anchor is the Gemini Apps median prompt energy reported by Elsworth et al.: $0.24$ Wh/prompt \cite{elsworth2025}.
+\item It makes token volume explicit. Prompt compute is approximated from input and output tokens, with a larger weight for output generation than for input processing.
+\item It does not scale on raw parameters alone. It constructs \emph{effective active parameters} by adjusting the target profile with context-window class, serving mode, modality support, and architecture notes.
+\item It reports a bounded low-central-high interval rather than a single falsely precise point.
+\item It derives carbon from retained energy and the electricity mix of the retained country, which is a contextual assumption rather than a model measurement.
+\end{itemize}
+
+Formally, let $E_a = 0.24$ Wh be the anchor value and $P_a = 180$ the active-parameter proxy retained for the anchor model. For a target model $t$, let $P_t$ denote active parameters, $T_{in}$ input tokens, and $T_{out}$ output tokens. We define weighted prompt-compute volume:
+\begin{equation}
+V_t = T_{in} + \omega T_{out},
+\end{equation}
+with $\omega = 1.8$ in the current release. The project reference scenario is:
+\begin{equation}
+V_{ref} = 1000 + 1.8 \times 550 = 1990.
+\end{equation}
+
+Effective active parameters are then defined by:
+\begin{equation}
+P^{eff}_{t,s} = P_t \times F^{ctx}_{t,s} \times F^{srv}_{t,s} \times F^{mod}_{t,s} \times F^{arch}_{t,s},
+\end{equation}
+where $s \in \{\mathrm{low}, \mathrm{central}, \mathrm{high}\}$ indexes the screening scenario. The final per-request energy estimate is:
+\begin{equation}
+\hat{E}_{t,s} = E_a \times \left(\frac{P^{eff}_{t,s}}{P_a}\right)^{\alpha_s}
+\times \left(\frac{V_t}{V_{ref}}\right)^{\beta_s}.
+\end{equation}
+The current implementation uses $\alpha_{low}=0.85$, $\alpha_{central}=0.95$, $\alpha_{high}=1.05$, and $\beta_{low}=0.85$, $\beta_{central}=0.92$, $\beta_{high}=1.0$. Carbon is then derived from the retained country mix:
+\begin{equation}
+\hat{C}_{t,s,c} = \frac{\hat{E}_{t,s}}{1000} \times CI_c,
+\end{equation}
+where $CI_c$ is the carbon intensity of country $c$ in gCO$_2$e/kWh.
+
+This method is not presented as a physical law of inference scaling. It is a traceable screening proxy anchored in observed prompt energy and explicit contextual assumptions. Its purpose is to provide a fast and inspectable estimate for comparative reasoning, not an audited declaration of real provider-side energy use.
+
+\section{Training Screening Method}
+The observatory also exposes training orders of magnitude for current market models. Here the uncertainty is even higher than for inference because published values are sparse, heterogeneous, and often reported only as aggregate emissions. A pure parameter-only scaling is therefore too brittle. The current release instead uses a second bounded proxy that combines retained parameter count with additional training priors.
+
+The training proxy starts from literature anchors that directly report training CO$_2$e, and from training-energy reconstructions derived from those emissions when the source-country electricity mix is documented. For a target model $t$, the central training estimate is:
+\begin{equation}
+\hat{E}^{train}_{t,s} = E^{train}_a \times \left(\frac{P_t}{P_a}\right)^{\alpha_s}
+\times \left(\frac{Tok_t}{Tok_a}\right)^{\beta_s}
+\times F^{reg}_{t,s} \times F^{arch-tr}_{t,s} \times F^{hw}_{t,s},
+\end{equation}
+where $P_t$ is the retained parameter count, $Tok_t$ is a training-token prior, $F^{reg}$ is a training-regime prior, $F^{arch-tr}$ captures architecture and multimodality assumptions, and $F^{hw}$ is a hardware-class proxy. The current release uses a simple prior of 20 training tokens per retained parameter when no better public estimate is available, and defaults market models to a foundation-pretraining regime unless a narrower public indication exists.
+
+This second proxy is not used in the application estimator shown to users, which remains inference-only. It is used in the observatory and the comparative tables to avoid suggesting that training impacts can be projected from parameter count alone. The result should still be read as a screening order of magnitude rather than as an audited declaration of model-development impact.
 
 
 \section{Illustrative Results}
