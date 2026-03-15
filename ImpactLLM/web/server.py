@@ -31,6 +31,8 @@ from core.estimator import (
     market_modality_factor,
     market_serving_factor,
     parse_market_bool,
+    training_parameter_count_billion,
+    training_tokens_estimate_trillion,
     to_float,
     wh_to_gco2e,
     wh_to_liters,
@@ -2483,12 +2485,30 @@ def build_training_models_view(records):
     chart_rows = []
     scatter_chart_rows = []
     body = []
+    regime_scores = {
+        "instruction_tuning": 0.2,
+        "alignment_or_rl": 0.4,
+        "continued_pretraining": 0.7,
+        "pretraining": 1.0,
+        "unknown": 0.5,
+    }
+    hardware_scores = {
+        "modern_hyperscale_gpu": 1.0,
+        "mixed_gpu_cluster": 0.75,
+        "standard_gpu_cluster": 0.5,
+        "older_or_unknown_cluster": 0.25,
+        "unknown": 0.5,
+    }
     for row in rows:
         architecture_notes = str(row.get("architecture_notes", "") or "").lower()
-        serving_mode = str(row.get("serving_mode", "") or "").strip().lower()
+        training_profile = row.get("training_proxy_profile") or {}
+        training_regime = str(training_profile.get("training_regime") or row.get("training_regime") or "unknown").strip().lower()
+        hardware_class = str(training_profile.get("training_hardware_class_proxy") or row.get("training_hardware_class_proxy") or "unknown").strip().lower()
         results = row.get("training_results_by_id") or {}
         direct_energy = results.get("direct_training_energy") or {}
         direct_carbon = results.get("direct_training_carbon") or {}
+        retained_training_params = to_float(training_profile.get("target_params_billion"), default=training_parameter_count_billion(row) or 0.0)
+        retained_training_tokens = to_float(training_profile.get("target_tokens_trillion"), default=training_tokens_estimate_trillion(row) or 0.0)
         chart_rows.append(
             {
                 "label": row.get("display_name", row.get("model_id", "")),
@@ -2502,9 +2522,10 @@ def build_training_models_view(records):
             {
                 "label": row.get("display_name", row.get("model_id", "")),
                 "provider": row.get("provider", ""),
-                "active_parameters_billion": to_float(row.get("active_parameters_billion"), default=0.0),
-                "context_window_tokens": to_float(row.get("context_window_tokens"), default=0.0),
-                "serving_mode_score": 1.0 if serving_mode == "closed" else 0.5 if serving_mode == "hybrid" else 0.0,
+                "active_parameters_billion": retained_training_params,
+                "training_tokens_estimate_trillion": retained_training_tokens,
+                "training_regime_score": regime_scores.get(training_regime, regime_scores["unknown"]),
+                "training_hardware_score": hardware_scores.get(hardware_class, hardware_scores["unknown"]),
                 "vision_support_score": 1.0 if parse_market_bool(row.get("vision_support")) else 0.0,
                 "moe_score": 1.0 if "moe" in architecture_notes else 0.0,
                 "reasoning_score": 1.0 if "reason" in architecture_notes else 0.0,
@@ -2526,18 +2547,18 @@ def build_training_models_view(records):
     chart_rows.extend(
         [
             {
-                "label": "3,132 households (annual domestic use)",
+                "label": "2,760,139 households (annual domestic use)",
                 "provider": "Everyday benchmark",
                 "kind": "reference",
-                "direct_training_energy_wh": 7829215576.6,
+                "direct_training_energy_wh": 6900346573084.866,
                 "direct_training_carbon_tco2e": 235.0,
             },
             {
-                "label": "1,651 full commercial flights",
+                "label": "292,210 full commercial flights",
                 "provider": "Everyday benchmark",
                 "kind": "reference",
                 "direct_training_energy_wh": 0.0,
-                "direct_training_carbon_tco2e": 34842.8,
+                "direct_training_carbon_tco2e": 6166824.8704,
             },
         ]
     )
@@ -2562,13 +2583,13 @@ def render_training_models_charts(records):
           <h3>Comparative training impacts of models</h3>
         </div>
       </div>
-      <p class="summary-intro">The chart below shows the extrapolated central values for all catalog models across two training indicator families: training energy and direct training CO2e. Everyday benchmarks are inserted directly into the list to situate the orders of magnitude.</p>
+      <p class="summary-intro">The chart below shows the central values retained for all catalog models across two training indicator families: training energy and direct training CO2e. The current screening method combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Everyday benchmarks are inserted directly into the list to situate the orders of magnitude.</p>
       <div class="chart-tabbar" role="tablist" aria-label="Training chart indicator">
         <button type="button" class="chart-tab-button is-active" data-training-chart-control="metric-tab" data-metric-value="direct_training_energy" aria-selected="true">Energy</button>
         <button type="button" class="chart-tab-button" data-training-chart-control="metric-tab" data-metric-value="direct_training_carbon" aria-selected="false">Carbon</button>
       </div>
       <div id="training-impact-chart" class="models-impact-chart" data-training-chart-rows='{escape(json.dumps(view["chart_rows"], ensure_ascii=False), quote=True)}'></div>
-      <p class="summary-intro models-benchmark-note">Benchmarks integrated into the chart: household electricity for <strong>3,132 households</strong> over one year of domestic use, i.e. ≈ <strong>7.83 GWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>34,842.8 tCO2e</strong> for <strong>1,651 full flights</strong>. These two comparison points are aligned with the order of magnitude of Claude Opus 4.1 in the training chart.</p>
+      <p class="summary-intro models-benchmark-note">Benchmarks integrated into the chart: household electricity for <strong>2,760,139 households</strong> over one year of domestic use, i.e. ≈ <strong>6.90 TWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>6,166,824.9 tCO2e</strong> for <strong>292,210 full flights</strong>. These two comparison points are aligned with the order of magnitude of Claude Opus 4.1 in the training chart.</p>
     </section>
     <section class="panel reference-panel">
       <div class="summary-header">
@@ -2577,7 +2598,7 @@ def render_training_models_charts(records):
           <h3>Training model landscape</h3>
         </div>
       </div>
-      <p class="summary-intro">This landscape view clusters the catalog models from the characteristics retained by the project for training screening: active parameters, context window, serving mode, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.</p>
+      <p class="summary-intro">This landscape view clusters the catalog models from the characteristics retained by the project for training screening: retained parameter count, training-token prior, training regime, hardware-class proxy, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.</p>
       <div id="training-carbon-params-scatter-chart" class="models-impact-chart" data-training-scatter-chart-rows='{escape(json.dumps(view["scatter_chart_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     <section class="panel reference-panel">
@@ -2587,7 +2608,7 @@ def render_training_models_charts(records):
           <h3>Training carbon vs. parameter count</h3>
         </div>
       </div>
-      <p class="summary-intro">This complementary view places models by retained active parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.</p>
+      <p class="summary-intro">This complementary view places models by retained parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.</p>
       <div id="training-carbon-params-log-chart" class="models-impact-chart" data-training-scatter-chart-rows='{escape(json.dumps(view["scatter_chart_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     """
@@ -2606,7 +2627,7 @@ def render_training_models_table(records):
           <h3>{len(rows)} current models with estimated training impacts</h3>
         </div>
       </div>
-      <p class="summary-intro">This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>direct training CO2e</strong>. Values are extrapolated by parameter count. Training energy therefore remains a more fragile screening reconstruction than direct carbon.</p>
+      <p class="summary-intro">This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>direct training CO2e</strong>. The current screening proxy combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Training energy therefore remains a more fragile screening reconstruction than direct carbon.</p>
       <div class="table-toolbar">
         <label class="table-search-label" for="training-model-search">Search for a model</label>
         <input id="training-model-search" class="table-search-input" type="search" placeholder="Example: GPT, Claude, 70B, Meta" data-table-search="training-models-table">
@@ -4255,8 +4276,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['This heatmap exposes the central screening factors retained for each market model. It shows the four multiplicative factors used by the project’s prompt proxy and the resulting ratio between effective and raw active parameters.', 'Cette heatmap rend visibles les facteurs centraux de screening retenus pour chaque modèle du marché. Elle montre les quatre facteurs multiplicatifs utilisés par le proxy prompt du projet ainsi que le ratio résultant entre paramètres actifs effectifs et paramètres actifs bruts.'],
       ['This complementary view places models by retained active parameter count on the horizontal axis and by central inference carbon over one hour on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres actifs retenus sur l’axe horizontal et leur carbone central d’inférence sur une heure sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
       ['This view compares central inference energy and carbon over one hour, while coloring each model by the retained electricity-mix country used for carbon recalculation. It helps separate model-size effects from country-mix effects.', 'Cette vue compare l’énergie et le carbone centraux d’inférence sur une heure, en colorant chaque modèle selon le pays de mix électrique retenu pour le recalcul du carbone. Elle aide à distinguer les effets de taille de modèle des effets de mix pays.'],
-      ['This landscape view clusters the catalog models from the characteristics retained by the project for training screening: active parameters, context window, serving mode, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.', 'Cette vue de paysage regroupe les modèles du catalogue à partir des caractéristiques retenues par le projet pour le screening en entraînement : paramètres actifs, fenêtre de contexte, mode de service, support multimodal, notes d’architecture, ainsi que sorties centrales d’énergie et de carbone d’entraînement. Des points proches indiquent des profils de screening retenus similaires plutôt qu’un classement direct sur un seul axe.'],
-      ['This complementary view places models by retained active parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres actifs retenus sur l’axe horizontal et leur CO2e direct d’entraînement sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
+      ['This landscape view clusters the catalog models from the characteristics retained by the project for training screening: retained parameter count, training-token prior, training regime, hardware-class proxy, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.', 'Cette vue de paysage regroupe les modèles du catalogue à partir des caractéristiques retenues par le projet pour le screening en entraînement : nombre de paramètres retenu, prior sur les tokens d’entraînement, régime d’entraînement, proxy de classe matérielle, support multimodal, notes d’architecture, ainsi que sorties centrales d’énergie et de carbone d’entraînement. Des points proches indiquent des profils de screening retenus similaires plutôt qu’un classement direct sur un seul axe.'],
+      ['This complementary view places models by retained parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres retenu sur l’axe horizontal et leur CO2e direct d’entraînement sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
       ['3. Carbon derivation from the country mix', '3. Dérivation du carbone à partir du mix pays'],
       ['Carbon is not reused directly from the literature. It is derived from extrapolated energy using the retained country electricity mix, here', 'Le carbone n’est pas réutilisé directement depuis la littérature. Il est dérivé de l’énergie extrapolée à partir du mix électrique du pays retenu, ici'],
       ['The unit result retained for this method then leads to the following annualized values: energy', 'Le résultat unitaire retenu pour cette méthode conduit ensuite aux valeurs annualisées suivantes : énergie'],
@@ -4285,10 +4306,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Comparative environmental impact of models', 'Impact environnemental comparatif des modèles'],
       ['current models tracked by the project', 'modèles actuels suivis par le projet'],
       ['Comparative training impacts of models', 'Impacts d’entraînement comparés des modèles'],
-      ['The chart below shows the extrapolated central values for all catalog models across two training indicator families: training energy and direct training CO2e. Everyday benchmarks are inserted directly into the list to situate the orders of magnitude.', 'Le graphique ci-dessous présente les valeurs centrales extrapolées pour tous les modèles du catalogue selon deux familles d’indicateurs d’entraînement : l’énergie d’entraînement et le CO2e direct d’entraînement. Des repères du quotidien sont intégrés directement à la liste pour situer les ordres de grandeur.'],
-      ['Benchmarks integrated into the chart: household electricity for <strong>3,132 households</strong> over one year of domestic use, i.e. ≈ <strong>7.83 GWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>34,842.8 tCO2e</strong> for <strong>1,651 full flights</strong>. These two comparison points are aligned with the order of magnitude of Claude Opus 4.1 in the training chart.', 'Repères intégrés au graphique : électricité domestique pour <strong>3 132 foyers</strong> sur une année d’usage résidentiel, soit ≈ <strong>7,83 GWh</strong> sur la base d’une consommation moyenne de 2 500 kWh par foyer (estimation RTE 2021), et aviation commerciale complète dérivée de Klöwer et al. (2025) à partir de 577.97 MtCO2 et 27.45 millions de vols commerciaux observés en 2023, soit ≈ <strong>34 842,8 tCO2e</strong> pour <strong>1 651 vols complets</strong>. Ces deux repères sont alignés sur l’ordre de grandeur de Claude Opus 4.1 dans le graphique d’entraînement.'],
+      ['The chart below shows the central values retained for all catalog models across two training indicator families: training energy and direct training CO2e. The current screening method combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Everyday benchmarks are inserted directly into the list to situate the orders of magnitude.', 'Le graphique ci-dessous présente les valeurs centrales retenues pour tous les modèles du catalogue selon deux familles d’indicateurs d’entraînement : l’énergie d’entraînement et le CO2e direct d’entraînement. La méthode actuelle de screening combine le nombre de paramètres retenu, un prior sur les tokens d’entraînement, un prior sur le régime d’entraînement, des caractéristiques d’architecture et un proxy de classe matérielle. Des repères du quotidien sont intégrés directement à la liste pour situer les ordres de grandeur.'],
+      ['Benchmarks integrated into the chart: household electricity for <strong>2,760,139 households</strong> over one year of domestic use, i.e. ≈ <strong>6.90 TWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>6,166,824.9 tCO2e</strong> for <strong>292,210 full flights</strong>. These two comparison points are aligned with the order of magnitude of Claude Opus 4.1 in the training chart.', 'Repères intégrés au graphique : électricité domestique pour <strong>2 760 139 foyers</strong> sur une année d’usage résidentiel, soit ≈ <strong>6,90 TWh</strong> sur la base d’une consommation moyenne de 2 500 kWh par foyer (estimation RTE 2021), et aviation commerciale complète dérivée de Klöwer et al. (2025) à partir de 577.97 MtCO2 et 27.45 millions de vols commerciaux observés en 2023, soit ≈ <strong>6 166 824,9 tCO2e</strong> pour <strong>292 210 vols complets</strong>. Ces deux repères sont alignés sur l’ordre de grandeur de Claude Opus 4.1 dans le graphique d’entraînement.'],
       ['current models with estimated training impacts', 'modèles actuels avec impacts d’entraînement estimés'],
-      ['This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>direct training CO2e</strong>. Values are extrapolated by parameter count. Training energy therefore remains a more fragile screening reconstruction than direct carbon.', 'Ce tableau projette les ordres de grandeur d’entraînement des modèles actuels à partir des familles d’indicateurs réellement disponibles dans la littérature : <strong>l’énergie d’entraînement</strong>, dérivée des émissions lorsque le pays source est documenté dans la table des mixes électriques, et le <strong>CO2e direct d’entraînement</strong>. Les valeurs sont extrapolées selon le nombre de paramètres. L’énergie d’entraînement reste donc une reconstruction de screening plus fragile que le carbone direct.'],
+      ['This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>direct training CO2e</strong>. The current screening proxy combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Training energy therefore remains a more fragile screening reconstruction than direct carbon.', 'Ce tableau projette les ordres de grandeur d’entraînement des modèles actuels à partir des familles d’indicateurs réellement disponibles dans la littérature : <strong>l’énergie d’entraînement</strong>, dérivée des émissions lorsque le pays source est documenté dans la table des mixes électriques, et le <strong>CO2e direct d’entraînement</strong>. Le proxy de screening actuel combine le nombre de paramètres retenu, un prior sur les tokens d’entraînement, un prior sur le régime d’entraînement, des caractéristiques d’architecture et un proxy de classe matérielle. L’énergie d’entraînement reste donc une reconstruction de screening plus fragile que le carbone direct.'],
       ['`*` indicates an estimated parameter count rather than a provider-published value.', '`*` indique un nombre de paramètres estimé plutôt qu’une valeur publiée par le fournisseur.'],
       ['Source annex used in the site', 'Annexe des sources utilisées sur le site'],
       ['Inference reference set', 'Jeu de références pour l’inférence'],
@@ -4342,8 +4363,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Laptop 1 h', 'Ordinateur portable 1 h'],
       ['Electric heater 4.1 min', 'Radiateur électrique 4,1 min'],
       ['Electric heater 10 min (US mix)', 'Radiateur électrique 10 min (mix US)'],
-      ['3,132 households (annual domestic use)', '3 132 foyers (usage domestique annuel)'],
-      ['1,651 full commercial flights', '1 651 vols commerciaux complets'],
+      ['2,760,139 households (annual domestic use)', '2 760 139 foyers (usage domestique annuel)'],
+      ['292,210 full commercial flights', '292 210 vols commerciaux complets'],
     ];
     const attributeTranslations = [
       ['#description', 'placeholder', 'estimatePlaceholder'],
@@ -4369,8 +4390,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       'Laptop 1 h': 'Laptop 1 h',
       'Electric heater 4.1 min': 'Electric heater 4.1 min',
       'Electric heater 10 min (US mix)': 'Electric heater 10 min (US mix)',
-      '3,132 households (annual domestic use)': '3,132 households (annual domestic use)',
-      '1,651 full commercial flights': '1,651 full commercial flights',
+      '2,760,139 households (annual domestic use)': '2,760,139 households (annual domestic use)',
+      '292,210 full commercial flights': '292,210 full commercial flights',
     }};
     function normalizeLanguage(value) {{
       return value === 'fr' ? 'fr' : 'en';
@@ -5274,9 +5295,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         `;
       }}).join('');
       const intro = currentLanguage.value === 'fr'
-        ? 'Positionnement des modèles selon leurs paramètres actifs retenus et leur CO2e direct d’entraînement, en échelle logarithmique.'
-        : 'Positioning of models by retained active parameter count and direct training CO2e, on logarithmic axes.';
-      const xLabel = currentLanguage.value === 'fr' ? 'Paramètres actifs retenus' : 'Retained active parameters';
+        ? 'Positionnement des modèles selon leur nombre de paramètres retenu et leur CO2e direct d’entraînement, en échelle logarithmique.'
+        : 'Positioning of models by retained parameter count and direct training CO2e, on logarithmic axes.';
+      const xLabel = currentLanguage.value === 'fr' ? 'Nombre de paramètres retenu' : 'Retained parameter count';
       const yLabel = currentLanguage.value === 'fr' ? 'CO2e direct d’entraînement, tCO2e' : 'Direct training CO2e, tCO2e';
       trainingScatterLogChart.innerHTML = `
         <div class="summary-intro" style="margin-bottom:0.75rem;">${{intro}}</div>
@@ -5374,8 +5395,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       trainingScatterChart.innerHTML = buildLandscapeMarkup(rows, {{
         featureKeys: [
           'active_parameters_billion',
-          'context_window_tokens',
-          'serving_mode_score',
+          'training_tokens_estimate_trillion',
+          'training_regime_score',
+          'training_hardware_score',
           'vision_support_score',
           'moe_score',
           'reasoning_score',
@@ -5383,8 +5405,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           'direct_training_carbon_tco2e',
         ],
         intro: {{
-          en: 'This clustered landscape is derived from the full training screening profile retained by the project. Nearby points indicate models with similar retained combinations of size, context, serving assumptions, architecture notes, and central training outcomes.',
-          fr: 'Cette carte groupée est dérivée du profil complet de screening retenu par le projet pour l’entraînement. Les points proches indiquent des modèles aux combinaisons retenues similaires de taille, contexte, hypothèses de service, notes d’architecture et résultats centraux d’entraînement.'
+          en: 'This clustered landscape is derived from the full training screening profile retained by the project. Nearby points indicate models with similar retained combinations of size, training-token prior, training regime, hardware proxy, architecture notes, and central training outcomes.',
+          fr: 'Cette carte groupée est dérivée du profil complet de screening retenu par le projet pour l’entraînement. Les points proches indiquent des modèles aux combinaisons retenues similaires de taille, prior sur les tokens d’entraînement, régime d’entraînement, proxy matériel, notes d’architecture et résultats centraux d’entraînement.'
         }},
         axisLabels: {{
           x: {{ en: 'Landscape dimension 1 (composite projection)', fr: 'Dimension 1 du paysage (projection composite)' }},

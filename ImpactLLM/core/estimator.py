@@ -28,6 +28,7 @@ MARKET_REFERENCE_REQUESTS_PER_HOUR = round(
     / (MARKET_REFERENCE_OUTPUT_TOKENS * MARKET_REFERENCE_WORDS_PER_TOKEN),
     1,
 )
+TRAINING_REFERENCE_TOKENS_PER_PARAMETER = 20.0
 
 
 def load_records():
@@ -1560,6 +1561,75 @@ def compute_market_screening_proxy(row, input_tokens=None, output_tokens=None, r
     }
 
 
+def training_parameter_count_billion(row):
+    total = to_float(row.get("total_parameters_billion"), default=None)
+    if total not in (None, 0):
+        return total
+    return to_float(row.get("active_parameters_billion"), default=None)
+
+
+def training_tokens_estimate_trillion(row):
+    explicit = to_float(row.get("training_tokens_estimate_trillion"), default=None)
+    if explicit not in (None, 0):
+        return explicit
+    params = training_parameter_count_billion(row)
+    if params in (None, 0):
+        return None
+    return round((params * TRAINING_REFERENCE_TOKENS_PER_PARAMETER) / 1000.0, 4)
+
+
+def training_regime_factor(regime, scenario="central"):
+    factors = {
+        "pretraining": {"low": 0.8, "central": 1.0, "high": 1.2},
+        "continued_pretraining": {"low": 0.08, "central": 0.15, "high": 0.3},
+        "instruction_tuning": {"low": 0.01, "central": 0.03, "high": 0.08},
+        "alignment_or_rl": {"low": 0.02, "central": 0.08, "high": 0.2},
+        "unknown": {"low": 0.2, "central": 1.0, "high": 2.5},
+    }
+    normalized = str(regime or "unknown").strip().lower() or "unknown"
+    return factors.get(normalized, factors["unknown"]).get(scenario, factors["unknown"]["central"])
+
+
+def training_architecture_factor(row, scenario="central"):
+    multiplier = 1.0
+    notes = str(row.get("architecture_notes", "") or "").lower()
+    active = to_float(row.get("active_parameters_billion"), default=0.0)
+    total = to_float(row.get("total_parameters_billion"), default=0.0)
+    multimodal = parse_market_bool(row.get("training_multimodal"))
+    if not multimodal:
+        multimodal = parse_market_bool(row.get("vision_support"))
+
+    if "moe" in notes or (active > 0 and total > active * 1.5):
+        moe_factors = {
+            "low": 0.7,
+            "central": 0.9,
+            "high": 1.1,
+        }
+        multiplier *= moe_factors.get(scenario, moe_factors["central"])
+
+    if multimodal:
+        multimodal_factors = {
+            "low": 1.05,
+            "central": 1.15,
+            "high": 1.35,
+        }
+        multiplier *= multimodal_factors.get(scenario, multimodal_factors["central"])
+
+    return multiplier
+
+
+def training_hardware_factor(hardware_class, scenario="central"):
+    factors = {
+        "modern_hyperscale_gpu": {"low": 0.8, "central": 0.9, "high": 1.0},
+        "mixed_gpu_cluster": {"low": 0.9, "central": 1.0, "high": 1.1},
+        "standard_gpu_cluster": {"low": 0.95, "central": 1.05, "high": 1.15},
+        "older_or_unknown_cluster": {"low": 1.0, "central": 1.1, "high": 1.25},
+        "unknown": {"low": 0.85, "central": 1.0, "high": 1.2},
+    }
+    normalized = str(hardware_class or "unknown").strip().lower() or "unknown"
+    return factors.get(normalized, factors["unknown"]).get(scenario, factors["unknown"]["central"])
+
+
 def normalize_training_metric_value(record):
     metric_name = record.get("metric_name")
     value = to_float(record.get("metric_value"), default=None)
@@ -1637,29 +1707,82 @@ def build_training_market_predictions(records):
     anchors_by_family = build_training_prediction_anchors(records)
     predictions = []
     for row in load_market_models():
-        target_params = to_float(row.get("active_parameters_billion"), default=None)
+        target_params = training_parameter_count_billion(row)
+        target_tokens = training_tokens_estimate_trillion(row)
+        training_regime = str(row.get("training_regime") or "unknown").strip().lower() or "unknown"
+        hardware_class = str(row.get("training_hardware_class_proxy") or "unknown").strip().lower() or "unknown"
         family_results = {}
         selected_factors = []
-        for family_name, anchors in anchors_by_family.items():
-            if not anchors or target_params in (None, 0):
-                continue
-            intensities = [anchor["source_value"] / anchor["source_params"] for anchor in anchors if anchor.get("source_params")]
-            if not intensities:
-                continue
-            mean_intensity = sum(intensities) / len(intensities)
-            estimated_value = mean_intensity * target_params
-            family_results[family_name] = {
-                "value": estimated_value,
-                "unit": "Wh" if family_name == "direct_training_energy" else ("tCO2e" if "carbon" in family_name else "kL"),
-                "anchors": anchors,
-                "mean_intensity_per_billion": mean_intensity,
+        proxy_profile = {
+            "target_params_billion": round(target_params, 4) if target_params not in (None, 0) else None,
+            "target_tokens_trillion": round(target_tokens, 4) if target_tokens not in (None, 0) else None,
+            "training_regime": training_regime,
+            "training_hardware_class_proxy": hardware_class,
+            "factors": {},
+        }
+        for scenario, alpha, beta in (("low", 0.85, 0.70), ("central", 1.00, 1.00), ("high", 1.15, 1.20)):
+            proxy_profile["factors"][scenario] = {
+                "parameter_exponent": alpha,
+                "token_exponent": beta,
+                "regime_factor": round(training_regime_factor(training_regime, scenario=scenario), 4),
+                "architecture_factor": round(training_architecture_factor(row, scenario=scenario), 4),
+                "hardware_factor": round(training_hardware_factor(hardware_class, scenario=scenario), 4),
             }
-            selected_factors.extend(anchor["record_id"] for anchor in anchors)
+        for family_name, anchors in anchors_by_family.items():
+            if not anchors or target_params in (None, 0) or target_tokens in (None, 0):
+                continue
+            scenario_estimates = {"low": [], "central": [], "high": []}
+            retained_anchors = []
+            for anchor in anchors:
+                source_params = to_float(anchor.get("source_params"), default=None)
+                if source_params in (None, 0):
+                    continue
+                source_tokens = round((source_params * TRAINING_REFERENCE_TOKENS_PER_PARAMETER) / 1000.0, 4)
+                if source_tokens in (None, 0):
+                    continue
+                retained_anchors.append({**anchor, "source_tokens_trillion": source_tokens})
+                for scenario, alpha, beta in (("low", 0.85, 0.70), ("central", 1.00, 1.00), ("high", 1.15, 1.20)):
+                    profile = proxy_profile["factors"][scenario]
+                    estimate = anchor["source_value"]
+                    estimate *= (target_params / source_params) ** alpha
+                    estimate *= (target_tokens / source_tokens) ** beta
+                    estimate *= profile["regime_factor"]
+                    estimate *= profile["architecture_factor"]
+                    estimate *= profile["hardware_factor"]
+                    scenario_estimates[scenario].append(estimate)
+
+            if not retained_anchors:
+                continue
+            central_estimate = sum(scenario_estimates["central"]) / len(scenario_estimates["central"])
+            low_estimate = sum(scenario_estimates["low"]) / len(scenario_estimates["low"])
+            high_estimate = sum(scenario_estimates["high"]) / len(scenario_estimates["high"])
+            range_low = min(low_estimate, central_estimate, high_estimate)
+            range_high = max(low_estimate, central_estimate, high_estimate)
+            family_results[family_name] = {
+                "value": central_estimate,
+                "unit": "Wh" if family_name == "direct_training_energy" else ("tCO2e" if "carbon" in family_name else "kL"),
+                "anchors": retained_anchors,
+                "range": rounded_range(range_low, central_estimate, range_high),
+                "method_id": "training_multifactor_proxy_v1",
+                "method_label": "Multi-factor training proxy calibrated on literature training anchors",
+                "reference_token_ratio": TRAINING_REFERENCE_TOKENS_PER_PARAMETER,
+                "target_params": round(target_params, 4),
+                "target_tokens_trillion": round(target_tokens, 4),
+                "training_regime": training_regime,
+                "training_hardware_class_proxy": hardware_class,
+                "notes": (
+                    "Central estimate = literature training anchor scaled by retained parameter count, training-token prior, "
+                    "training regime, architecture profile, and hardware-class proxy. Low/high values widen the parameter "
+                    "and token exponents together with contextual factors."
+                ),
+            }
+            selected_factors.extend(anchor["record_id"] for anchor in retained_anchors)
         predictions.append(
             {
                 **row,
                 "training_results_by_id": family_results,
                 "selected_training_factors": dedupe(selected_factors),
+                "training_proxy_profile": proxy_profile,
             }
         )
     return predictions
