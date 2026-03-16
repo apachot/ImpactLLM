@@ -10,60 +10,6 @@ MARKET_MODELS_PATH = ROOT / "data" / "market_models.csv"
 
 NEW_MARKET_MODELS = [
     {
-        "model_id": "gpt-3",
-        "display_name": "GPT-3 (Davinci)",
-        "provider": "openai",
-        "market_status": "api",
-        "serving_mode": "closed",
-        "server_country": "United States",
-        "server_country_status": "multi_region",
-        "server_country_source": "OpenAI API launch blog",
-        "server_country_source_url": "https://openai.com/blog/openai-api/",
-        "estimation_country_code": "US",
-        "estimation_country_status": "screening_proxy",
-        "estimation_country_source": "OpenAI API launch blog",
-        "estimation_country_source_url": "https://openai.com/blog/openai-api/",
-        "active_parameters_billion": "175",
-        "total_parameters_billion": "175",
-        "parameter_value_status": "observed",
-        "parameter_confidence": "medium",
-        "parameter_source": "Brown et al. (2020)",
-        "parameter_source_url": "https://arxiv.org/abs/2005.14165",
-        "notes": "Original GPT-3 API release describing the 175B decoder-only transformer.",
-        "input_modalities": "text",
-        "output_modalities": "text",
-        "context_window_tokens": "2048",
-        "max_output_tokens": "2048",
-        "vision_support": "no",
-        "architecture_notes": "Dense decoder-only transformer with 96 layers as documented by Brown et al. (2020).",
-        "modalities_source": "Brown et al. (2020)",
-        "modalities_source_url": "https://arxiv.org/abs/2005.14165",
-        "context_source": "Brown et al. (2020)",
-        "context_source_url": "https://arxiv.org/abs/2005.14165",
-        "architecture_source": "Brown et al. (2020)",
-        "architecture_source_url": "https://arxiv.org/abs/2005.14165",
-        "release_date": "2020-06-11",
-        "release_source": "OpenAI API launch blog",
-        "release_source_url": "https://openai.com/blog/openai-api/",
-        "screening_method_id": "market_multifactor_prompt_proxy_v1",
-        "training_tokens_estimate_trillion": "0.3",
-        "training_tokens_status": "observed",
-        "training_tokens_source": "Brown et al. (2020)",
-        "training_tokens_source_url": "https://arxiv.org/abs/2005.14165",
-        "training_regime": "pretraining",
-        "training_regime_status": "documented",
-        "training_regime_source": "Brown et al. (2020)",
-        "training_regime_source_url": "https://arxiv.org/abs/2005.14165",
-        "training_multimodal": "no",
-        "training_multimodal_source": "Brown et al. (2020)",
-        "training_multimodal_source_url": "https://arxiv.org/abs/2005.14165",
-        "training_hardware_class_proxy": "standard_gpu_cluster",
-        "training_hardware_source": "Brown et al. (2020)",
-        "training_hardware_source_url": "https://arxiv.org/abs/2005.14165",
-        "training_multifactor_method_id": "training_multifactor_proxy_v1",
-        "training_multifactor_anchor": "Transformer (big) (strubell2019_co2_transformer_big); BLOOM 176B (luccioni2023_bloom_dynamic); BLOOM 176B (luccioni2023_bloom_extended)",
-    },
-    {
         "model_id": "gpt-3.5-turbo",
         "display_name": "GPT-3.5 Turbo",
         "provider": "openai",
@@ -200,7 +146,7 @@ def main():
         for row in rows:
             writer.writerow(_normalize_row(row))
 
-    print("Market models dataset updated with GPT-3, GPT-3.5 Turbo, and GPT-4 entries.")
+    print("Market models dataset updated with GPT-3.5 Turbo and GPT-4 entries.")
 
 
 if __name__ == "__main__":

@@ -95,6 +95,8 @@ PAPER_PREVIEW_PATH = first_existing_path(
     ROOT / "web" / "ImpactLLM_paper_preview.png",
     ROOT / "web" / "llm_environment_opendata_paper_preview.png",
 )
+TRAINING_DOUBLING_FIGURE_PATH = ROOT.parent / "ImpactLLM-paper" / "figures" / "linkedin_training_co2_doubling_en.png"
+INFERENCE_DOUBLING_FIGURE_PATH = ROOT.parent / "ImpactLLM-paper" / "figures" / "linkedin_inference_co2_doubling_en.png"
 
 
 def app_url(path="/"):
@@ -2617,6 +2619,17 @@ def render_market_models_charts(records):
       <p class="summary-intro">This timeline follows the evolution of the project’s central inference CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.</p>
       <div id="inference-release-timeline-chart" class="models-impact-chart" data-release-timeline-rows='{escape(json.dumps(view["release_timeline_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Perspective</div>
+          <h3>Inference CO2 doubling view</h3>
+        </div>
+      </div>
+      <p class="summary-intro">This discussion-oriented chart summarizes the central inference screening values for flagship GPT, Claude, and Grok models as a simple doubling-time reading. It should be read as an interpretation of the retained observatory values, not as a provider-side measurement law.</p>
+      <div id="inference-doubling-timeline-chart" class="models-impact-chart" data-release-timeline-rows='{escape(json.dumps(view["release_timeline_rows"], ensure_ascii=False), quote=True)}'></div>
+      <p class="summary-intro models-benchmark-note">Under the current central screening profile, the flagship inference series suggests a slower increase than training, because standardized usage, active compute, and per-request serving assumptions damp part of the growth that appears in total model scale.</p>
+    </section>
     """
 
 
@@ -3038,6 +3051,17 @@ def render_training_models_charts(records):
       </div>
       <p class="summary-intro">This timeline follows the evolution of the project’s retained direct training CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.</p>
       <div id="training-release-timeline-chart" class="models-impact-chart" data-training-release-timeline-rows='{escape(json.dumps(view["release_timeline_rows"], ensure_ascii=False), quote=True)}'></div>
+    </section>
+    <section class="panel reference-panel">
+      <div class="summary-header">
+        <div>
+          <div class="summary-kicker">Perspective</div>
+          <h3>Training CO2 doubling view</h3>
+        </div>
+      </div>
+      <p class="summary-intro">This chart compresses the central training screening values of flagship GPT, Claude, and Grok models into a simple doubling-time interpretation. It is meant as a discussion support to make structural acceleration legible, not as a claim of direct industrial telemetry.</p>
+      <div id="training-doubling-timeline-chart" class="models-impact-chart" data-training-release-timeline-rows='{escape(json.dumps(view["release_timeline_rows"], ensure_ascii=False), quote=True)}'></div>
+      <p class="summary-intro models-benchmark-note">The apparent acceleration is stronger for training because the current screening method compounds retained parameter count, token priors, architecture effects, and hardware assumptions. The resulting doubling pace is therefore a transparent scenario reading, not a universal empirical constant.</p>
     </section>
     """
 
@@ -4738,6 +4762,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const scatterLinearChart = document.getElementById('carbon-params-linear-chart');
     const countryMixChart = document.getElementById('country-mix-sensitivity-chart');
     const inferenceReleaseTimelineChart = document.getElementById('inference-release-timeline-chart');
+    const inferenceDoublingTimelineChart = document.getElementById('inference-doubling-timeline-chart');
     const chartControls = Array.from(document.querySelectorAll('[data-model-chart-control="metric-tab"]'));
     const inferenceBubbleControls = Array.from(document.querySelectorAll('[data-inference-bubble-control="metric-tab"]'));
     const inferenceUncertaintyControls = Array.from(document.querySelectorAll('[data-inference-uncertainty-control="metric-tab"]'));
@@ -4748,6 +4773,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const trainingUncertaintyChart = document.getElementById('training-uncertainty-chart');
     const trainingScatterLogChart = document.getElementById('training-carbon-params-log-chart');
     const trainingReleaseTimelineChart = document.getElementById('training-release-timeline-chart');
+    const trainingDoublingTimelineChart = document.getElementById('training-doubling-timeline-chart');
     const modelDetailRoot = document.getElementById('model-detail-root');
     const modelDetailOverlay = document.getElementById('model-detail-overlay');
     const modelDetailDrawer = document.getElementById('model-detail-drawer');
@@ -6875,6 +6901,153 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         </svg>
       `;
     }};
+    const renderDoublingTimelineChart = (container, attrName, config) => {{
+      if (!container) return;
+      let rows = [];
+      try {{
+        rows = JSON.parse(container.getAttribute(attrName) || '[]');
+      }} catch (error) {{
+        rows = [];
+      }}
+      const locale = uiText[currentLanguage.value];
+      const keepLabels = new Set(config.keepLabels);
+      const points = rows
+        .map((row) => {{
+          const date = new Date(`${{row.release_date}}T00:00:00Z`);
+          const value = Number(row[config.valueKey] || 0);
+          return {{
+            rawLabel: row.label,
+            label: translateBenchmarkLabel(row.label, currentLanguage.value),
+            provider: row.provider || '',
+            date,
+            value,
+          }};
+        }})
+        .filter((row) => keepLabels.has(row.rawLabel) && !Number.isNaN(row.date.getTime()) && row.value > 0)
+        .sort((a, b) => a.date - b.date || a.provider.localeCompare(b.provider));
+      if (!points.length) {{
+        container.innerHTML = `<p class="lead">${{locale.noUsableValue}}</p>`;
+        return;
+      }}
+      const computeDoublingMonths = (series) => {{
+        if (series.length < 2) return null;
+        const baseDate = series[0].date;
+        const xs = series.map((point) => (point.date - baseDate) / (1000 * 60 * 60 * 24 * 30.4375));
+        const ys = series.map((point) => Math.log2(Math.max(point.value, 1e-9)));
+        const meanX = xs.reduce((sum, value) => sum + value, 0) / xs.length;
+        const meanY = ys.reduce((sum, value) => sum + value, 0) / ys.length;
+        const num = xs.reduce((sum, value, index) => sum + ((value - meanX) * (ys[index] - meanY)), 0);
+        const den = xs.reduce((sum, value) => sum + ((value - meanX) ** 2), 0);
+        if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return null;
+        const slope = num / den;
+        if (!Number.isFinite(slope) || slope <= 0) return null;
+        return 1 / slope;
+      }};
+      const doublingMonths = computeDoublingMonths(points);
+      const providerOrder = ['openai', 'anthropic', 'xai'];
+      const palette = {{
+        openai: '#243b63',
+        anthropic: '#8c7a5b',
+        xai: '#b85c38',
+      }};
+      const width = 980;
+      const height = 620;
+      const padding = {{ top: 24, right: 24, bottom: 86, left: 86 }};
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const xMin = Math.min(...points.map((row) => row.date.getTime()));
+      const xMax = Math.max(...points.map((row) => row.date.getTime()));
+      const safeLog = (value) => Math.log10(Math.max(value, 1e-9));
+      const yMin = Math.min(...points.map((row) => row.value));
+      const yMax = Math.max(...points.map((row) => row.value));
+      const yMinLog = safeLog(yMin);
+      const yMaxLog = safeLog(yMax);
+      const scaleX = (value) => padding.left + ((value - xMin) / Math.max(xMax - xMin, 1)) * plotWidth;
+      const scaleY = (value) => padding.top + plotHeight - ((safeLog(value) - yMinLog) / Math.max(yMaxLog - yMinLog, 1e-9)) * plotHeight;
+      const monthTicks = (() => {{
+        const ticks = [];
+        const start = new Date(xMin);
+        const end = new Date(xMax);
+        const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+        while (cursor <= end) {{
+          ticks.push(new Date(cursor.getTime()));
+          cursor.setUTCMonth(cursor.getUTCMonth() + 2);
+        }}
+        return ticks;
+      }})();
+      const xGrid = monthTicks.map((tick) => {{
+        const x = scaleX(tick.getTime());
+        const label = tick.toLocaleDateString(currentLanguage.value === 'fr' ? 'fr-FR' : 'en-US', {{
+          year: 'numeric',
+          month: 'short',
+          timeZone: 'UTC',
+        }});
+        return `
+          <line x1="${{x}}" y1="${{padding.top}}" x2="${{x}}" y2="${{padding.top + plotHeight}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{x}}" y="${{height - 40}}" text-anchor="middle" font-size="12" fill="#6c757d">${{label}}</text>
+        `;
+      }}).join('');
+      const yTickValues = (() => {{
+        const ticks = [];
+        const start = Math.floor(yMinLog);
+        const end = Math.ceil(yMaxLog);
+        for (let exponent = start; exponent <= end; exponent += 1) {{
+          ticks.push(10 ** exponent);
+        }}
+        return ticks.filter((value) => value >= yMin && value <= yMax);
+      }})();
+      const yGrid = yTickValues.map((value) => {{
+        const y = scaleY(value);
+        return `
+          <line x1="${{padding.left}}" y1="${{y}}" x2="${{padding.left + plotWidth}}" y2="${{y}}" stroke="rgba(0,0,0,0.08)" />
+          <text x="${{padding.left - 10}}" y="${{y + 4}}" text-anchor="end" font-size="12" fill="#6c757d">${{config.formatValue(value)}}</text>
+        `;
+      }}).join('');
+      const byProvider = providerOrder
+        .map((provider) => [provider, points.filter((point) => point.provider === provider)])
+        .filter(([, providerPoints]) => providerPoints.length);
+      const lines = byProvider.map(([provider, providerPoints]) => {{
+        const d = providerPoints
+          .map((point, index) => `${{index === 0 ? 'M' : 'L'}}${{scaleX(point.date.getTime()).toFixed(2)}},${{scaleY(point.value).toFixed(2)}}`)
+          .join(' ');
+        return `<path d="${{d}}" fill="none" stroke="${{palette[provider] || '#495057'}}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"></path>`;
+      }}).join('');
+      const dots = points.map((point) => {{
+        const cx = scaleX(point.date.getTime());
+        const cy = scaleY(point.value);
+        const fill = palette[point.provider] || '#495057';
+        return `
+          <circle cx="${{cx}}" cy="${{cy}}" r="5.5" fill="${{fill}}" opacity="0.95"></circle>
+          <text x="${{cx + 8}}" y="${{cy - 8}}" font-size="12" fill="#212529">${{point.label}}</text>
+        `;
+      }}).join('');
+      const legend = byProvider.map(([provider], index) => `
+        <g transform="translate(${{padding.left + index * 150}}, ${{height - 20}})">
+          <rect width="14" height="14" rx="3" fill="${{palette[provider] || '#495057'}}"></rect>
+          <text x="20" y="11" font-size="12" fill="#495057">${{providerDisplayName(provider)}}</text>
+        </g>
+      `).join('');
+      const doublingText = doublingMonths
+        ? (currentLanguage.value === 'fr'
+          ? `Temps de doublement estimé : ${{doublingMonths.toFixed(1)}} mois`
+          : `Estimated doubling time: ${{doublingMonths.toFixed(1)}} months`)
+        : '';
+      container.innerHTML = `
+        <div class="summary-intro" style="margin-bottom:0.75rem;">${{config.intro[currentLanguage.value]}}</div>
+        <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="${{config.ariaLabel[currentLanguage.value]}}">
+          ${{xGrid}}
+          ${{yGrid}}
+          <line x1="${{padding.left}}" y1="${{padding.top + plotHeight}}" x2="${{padding.left + plotWidth}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          <line x1="${{padding.left}}" y1="${{padding.top}}" x2="${{padding.left}}" y2="${{padding.top + plotHeight}}" stroke="#495057" />
+          ${{lines}}
+          ${{dots}}
+          ${{legend}}
+          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 52}}" text-anchor="middle" font-size="13" fill="#495057">${{config.xLabel[currentLanguage.value]}}</text>
+          <text x="18" y="${{padding.top + plotHeight / 2}}" text-anchor="middle" font-size="13" fill="#495057" transform="rotate(-90 18 ${{padding.top + plotHeight / 2}})">${{config.yLabel[currentLanguage.value]}}</text>
+          ${{doublingText ? `<text x="${{width - 24}}" y="20" text-anchor="end" font-size="12" fill="#6c757d">${{doublingText}}</text>` : ''}}
+        </svg>
+      `;
+    }};
     renderReleaseTimelineChart(inferenceReleaseTimelineChart, 'data-release-timeline-rows', {{
       valueKey: 'hour_carbon_gco2e',
       formatValue: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kg` : `${{value.toFixed(1)}} g`,
@@ -6893,6 +7066,27 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ariaLabel: {{
         en: 'Inference carbon by model release date chart',
         fr: 'Graphique du carbone d’inférence par date de sortie du modèle',
+      }},
+    }});
+    renderDoublingTimelineChart(inferenceDoublingTimelineChart, 'data-release-timeline-rows', {{
+      keepLabels: ['GPT-3.5 Turbo', 'GPT-4', 'GPT-5.2', 'Claude 2', 'Claude 3.5 Sonnet', 'Claude Sonnet 4', 'Claude Opus 4.1', 'Grok 1', 'Grok 2', 'Grok 4'],
+      valueKey: 'hour_carbon_gco2e',
+      formatValue: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kg` : `${{value.toFixed(1)}} g`,
+      intro: {{
+        en: 'Flagship GPT, Claude, and Grok models are isolated here to visualize the rate at which the current central inference-screening values appear to rise over time.',
+        fr: 'Les modèles phares GPT, Claude et Grok sont isolés ici pour visualiser la vitesse à laquelle les valeurs centrales actuelles de screening d’inférence semblent augmenter dans le temps.',
+      }},
+      xLabel: {{
+        en: 'Model release month',
+        fr: 'Mois de sortie du modèle',
+      }},
+      yLabel: {{
+        en: 'Central inference carbon, gCO2e/h (log scale)',
+        fr: 'Carbone central d’inférence, gCO2e/h (échelle logarithmique)',
+      }},
+      ariaLabel: {{
+        en: 'Inference CO2 doubling view',
+        fr: 'Vue du doublement du CO2 d’inférence',
       }},
     }});
     crossImpactControls.forEach((control) => {{
@@ -7034,6 +7228,27 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ariaLabel: {{
         en: 'Training carbon by model release date chart',
         fr: 'Graphique du carbone d’entraînement par date de sortie du modèle',
+      }},
+    }});
+    renderDoublingTimelineChart(trainingDoublingTimelineChart, 'data-training-release-timeline-rows', {{
+      keepLabels: ['GPT-3.5 Turbo', 'GPT-4', 'GPT-5.2', 'Claude 2', 'Claude 3.5 Sonnet', 'Claude Sonnet 4', 'Claude Opus 4.1', 'Grok 1', 'Grok 2', 'Grok 4'],
+      valueKey: 'direct_training_carbon_tco2e',
+      formatValue: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kt` : `${{value.toFixed(1)}} t`,
+      intro: {{
+        en: 'Flagship GPT, Claude, and Grok models are isolated here to visualize the apparent acceleration of the current central training-screening values over time.',
+        fr: 'Les modèles phares GPT, Claude et Grok sont isolés ici pour visualiser l’accélération apparente des valeurs centrales actuelles de screening d’entraînement dans le temps.',
+      }},
+      xLabel: {{
+        en: 'Model release month',
+        fr: 'Mois de sortie du modèle',
+      }},
+      yLabel: {{
+        en: 'Direct training CO2e, tCO2e (log scale)',
+        fr: 'CO2e direct d’entraînement, tCO2e (échelle logarithmique)',
+      }},
+      ariaLabel: {{
+        en: 'Training CO2 doubling view',
+        fr: 'Vue du doublement du CO2 d’entraînement',
       }},
     }});
     const formatTrainingChartValue = (value, metric) => {{
@@ -7232,6 +7447,26 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             self._write_html(render_page(error_message="Publication preview not found."), status=404, send_body=send_body)
+            return
+        if normalized_path == "/downloads/linkedin_training_co2_doubling_en.png":
+            if TRAINING_DOUBLING_FIGURE_PATH.exists():
+                self._write_bytes(
+                    TRAINING_DOUBLING_FIGURE_PATH.read_bytes(),
+                    "image/png",
+                    send_body=send_body,
+                )
+                return
+            self._write_html(render_page(error_message="Training doubling figure not found."), status=404, send_body=send_body)
+            return
+        if normalized_path == "/downloads/linkedin_inference_co2_doubling_en.png":
+            if INFERENCE_DOUBLING_FIGURE_PATH.exists():
+                self._write_bytes(
+                    INFERENCE_DOUBLING_FIGURE_PATH.read_bytes(),
+                    "image/png",
+                    send_body=send_body,
+                )
+                return
+            self._write_html(render_page(error_message="Inference doubling figure not found."), status=404, send_body=send_body)
             return
         self._write_html(render_page(), send_body=send_body)
 
