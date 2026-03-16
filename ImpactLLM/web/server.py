@@ -3259,13 +3259,13 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <p><strong>5. A research-oriented estimator.</strong></p>
           <p data-i18n-html="method-research-body">The result is an auditable estimate intended for comparison, software design, and methodological discussion. It is useful precisely because the assumptions, factors, and retained sources remain visible and inspectable.</p>
 
-          <p><strong>Scientific paper</strong></p>
+          <p><strong>Technical paper</strong></p>
           <div class="paper-preview-grid">
             <a class="paper-preview-card" href="{app_url('/downloads/ImpactLLM_paper.pdf')}" target="_blank" rel="noopener noreferrer" aria-label="Open the Transparent Screening paper PDF">
               <span class="paper-preview-frame">
                 <img src="{app_url('/downloads/ImpactLLM_paper_preview.png')}" alt="Preview of the first page of Transparent Screening for LLM Inference and Training Impacts" loading="lazy">
               </span>
-              <span class="paper-preview-caption">Transparent Screening paper PDF</span>
+              <span class="paper-preview-caption">Technical paper PDF</span>
             </a>
           </div>
           <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em>Transparent Screening for LLM Inference and Training Impacts.</em> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">{app_url('/downloads/ImpactLLM_paper.pdf')}</a></p>
@@ -3282,7 +3282,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Transparent Screening for LLM Inference and Training Impacts.</a></em></p>
           <p><strong>BibTeX</strong></p>
           <pre class="citation-block"><code>{escape(PROJECT_PAPER_BIBTEX)}</code></pre>
-          <p><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Download paper PDF</a> | <a href="{app_url('/downloads/ImpactLLM_paper.bib')}">Download paper BibTeX</a></p>
+          <p><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Download technical paper PDF</a> | <a href="{app_url('/downloads/ImpactLLM_paper.bib')}">Download technical paper BibTeX</a></p>
           <p><strong>GitHub repository</strong></p>
           <p>The project repository is available on GitHub: <a href="https://github.com/apachot/ImpactLLM" target="_blank" rel="noreferrer">https://github.com/apachot/ImpactLLM</a>.</p>
           <p><strong>License</strong></p>
@@ -4916,10 +4916,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Carbon is not copied mechanically from the source paper. It is recalculated from the retained energy estimate using the electricity mix associated with the selected country context.', 'Le carbone n’est pas repris mécaniquement depuis l’article source. Il est recalculé à partir de l’estimation énergétique retenue en utilisant le mix électrique associé au contexte pays sélectionné.'],
       ['5. A research-oriented estimator.', '5. Un estimateur orienté recherche.'],
       ['The result is an auditable estimate intended for comparison, software design, and methodological discussion. It is useful precisely because the assumptions, factors, and retained sources remain visible and inspectable.', 'Le résultat est une estimation auditable destinée à la comparaison, à la conception logicielle et à la discussion méthodologique. Son intérêt vient précisément du fait que les hypothèses, les facteurs et les sources retenues restent visibles et inspectables.'],
-      ['Scientific paper.', 'Article scientifique.'],
+      ['Technical paper.', 'Article technique.'],
       ['Download the PDF', 'Télécharger le PDF'],
       ['Download BibTeX entry', 'Télécharger l’entrée BibTeX'],
-      ['Download the associated scientific publication PDF', 'Télécharger le PDF de la publication scientifique associée'],
+      ['Download the associated technical paper PDF', "Télécharger le PDF de l'article technique associé"],
       ['ImpactLLM', 'ImpactLLM'],
       ['An open tool for exploring and estimating the environmental footprint of large language models.', 'Un outil libre pour estimer l’empreinte environnementale des LLMs.'],
       ['An open tool for estimating the environmental footprint of LLMs.', 'Un outil libre pour estimer l’empreinte environnementale des LLMs.'],
