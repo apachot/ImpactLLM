@@ -2670,7 +2670,7 @@ def render_market_models_table(records):
       </div>
       <p class="summary-intro">`Retained country` is the country actually used to recalculate CO2 via the electricity mix. When the exact country is not published, the project uses an explicit screening proxy rather than presenting a location as certain.</p>
       <p class="summary-intro">`*` indicates an estimated parameter count rather than a provider-published value.</p>
-      <p class="summary-intro">The market-model comparison now relies on <code>market_multifactor_prompt_proxy_v1</code>: a prompt-energy screening proxy calibrated on Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume.</p>
+      <p class="summary-intro">The market-model comparison now relies on <code>market_multifactor_prompt_proxy_v1</code>: a prompt-energy screening proxy whose main prompt-level calibration anchor comes from Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume, and interpreted alongside other inference references.</p>
     </section>
     """
 
@@ -3234,7 +3234,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         </div>
         <div class="summary-body">
           <p><strong>1. Source-linked literature anchors.</strong></p>
-          <p data-i18n-html="method-anchor-body">The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core is calibrated on Elsworth et al. (2025), which reports a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps.</p>
+          <p data-i18n-html="method-anchor-body">The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core uses Elsworth et al. (2025) as the main prompt-level calibration anchor, with a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps, and is interpreted alongside other inference references such as the <em>ML.ENERGY Benchmark</em>, Ren et al. (2024), and Li et al. (2025).</p>
 
           <p><strong>2. A multi-factor effective-parameter proxy.</strong></p>
           <p data-i18n-html="method-proxy-body">When direct telemetry is unavailable for a target model, ImpactLLM does not rely on a raw parameter multiple alone. It builds an effective active-parameter profile from the retained model characteristics: active parameters, context window, serving mode (<code>open</code>, <code>hybrid</code>, <code>closed</code>), modality support, and architecture notes such as MoE or reasoning-oriented overheads.</p>
@@ -3281,6 +3281,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <p>You should have received a copy of the GNU General Public License along with this program. If not, see <a href="https://www.gnu.org/licenses/" target="_blank" rel="noopener noreferrer">https://www.gnu.org/licenses/</a>.</p>
           <p><strong>Arnault Pachot</strong></p>
           <p>Arnault Pachot is a researcher and entrepreneur, founder of OpenStudio and now founder of Emotia. He works on responsible digital transformation, Green IT, and decision-oriented AI systems. He co-authored the Dunod book <em>Intelligence artificielle et environnement : alliance ou nuisance ?</em>, dedicated to practical pathways for environmentally responsible AI.</p>
+          <div class="paper-preview-grid">
+            <a class="paper-preview-card book-preview-card" href="https://www.dunod.com/entreprise-et-economie/intelligence-artificielle-et-environnement-alliance-ou-nuisance-ia-face-aux" target="_blank" rel="noopener noreferrer" aria-label="Open Arnault Pachot's Dunod book page">
+              <span class="paper-preview-frame">
+                <img class="book-cover-preview" src="https://www.dunod.com/sites/default/files/styles/principal_desktop/public/thumbnails/image/9782100835683-001-X.jpeg" alt="Cover of the Dunod book Intelligence artificielle et environnement : alliance ou nuisance ?" loading="lazy" referrerpolicy="no-referrer">
+              </span>
+              <span class="paper-preview-caption">Arnault Pachot's Dunod book</span>
+            </a>
+          </div>
           <p><strong>Thierry Petit</strong></p>
           <p>Thierry Petit is a senior AI researcher and scientific leader with more than twenty years of academic and R&amp;D experience in Europe and the United States. His work spans trustworthy AI, simulation, optimization, and decision-grade platforms. At Emotia and Pollitics, he leads the scientific direction of systems designed to remain both operationally useful and methodologically robust.</p>
           <p><strong>Selected references on AI and the environment</strong></p>
@@ -4401,6 +4409,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       max-width: 260px;
       width: 100%;
     }}
+    .paper-preview-card.book-preview-card {{
+      max-width: 182px;
+    }}
     .paper-preview-frame {{
       display: block;
       width: 100%;
@@ -4418,6 +4429,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       border: 0;
       object-fit: cover;
       background: #fff;
+    }}
+    .paper-preview-frame img.book-cover-preview {{
+      object-fit: contain;
+      padding: 0.35rem;
+      box-sizing: border-box;
     }}
     .paper-preview-card:hover .paper-preview-frame {{
       transform: translateY(-2px);
@@ -4765,7 +4781,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         comparisonTrainingSuffix: ' indicator.',
         modelsAriaLabel: 'Comparative chart of models',
         trainingAriaLabel: 'Comparative chart of training impacts',
-        methodAnchorBody: 'The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core is calibrated on Elsworth et al. (2025), which reports a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps.',
+        methodAnchorBody: 'The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core uses Elsworth et al. (2025) as the main prompt-level calibration anchor, with a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps, and is interpreted alongside other inference references such as the <em>ML.ENERGY Benchmark</em>, Ren et al. (2024), and Li et al. (2025).',
         methodProxyBody: 'When direct telemetry is unavailable for a target model, ImpactLLM does not rely on a raw parameter multiple alone. It builds an effective active-parameter profile from the retained model characteristics: active parameters, context window, serving mode (<code>open</code>, <code>hybrid</code>, <code>closed</code>), modality support, and architecture notes such as MoE or reasoning-oriented overheads.',
         methodTokensBody: 'The current proxy adjusts the anchor with a weighted prompt-compute volume defined from input and output tokens. Output generation is weighted more heavily than input processing, so output-heavy scenarios and repeated LLM calls raise the estimate materially.',
         methodBoundBody: 'The current prompt-level branch is a screening proxy, not an audited benchmark. For this reason, the application returns a bounded low-central-high result rather than one falsely precise deterministic value.',
@@ -4798,7 +4814,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         comparisonTrainingSuffix: '.',
         modelsAriaLabel: 'Graphique comparatif des modèles',
         trainingAriaLabel: 'Graphique comparatif des impacts d’entraînement',
-        methodAnchorBody: 'L’estimateur au niveau applicatif part d’indicateurs d’inférence publiés, reliés à une source, un modèle, une géographie et un périmètre système explicites. Dans la version actuelle pour les modèles du marché, le cœur prédictif est calibré sur Elsworth et al. (2025), qui rapporte une énergie médiane de <code>0.24 Wh/prompt</code> pour Gemini Apps.',
+        methodAnchorBody: 'L’estimateur au niveau applicatif part d’indicateurs d’inférence publiés, reliés à une source, un modèle, une géographie et un périmètre système explicites. Dans la version actuelle pour les modèles du marché, le cœur prédictif utilise Elsworth et al. (2025) comme ancrage principal de calibration au niveau prompt, avec une énergie médiane de <code>0.24 Wh/prompt</code> pour Gemini Apps, et se lit aux côtés d’autres références d’inférence comme le <em>ML.ENERGY Benchmark</em>, Ren et al. (2024) et Li et al. (2025).',
         methodProxyBody: 'Quand aucune télémétrie directe n’est disponible pour un modèle cible, ImpactLLM ne repose pas uniquement sur un multiple brut de paramètres. Il construit un profil en paramètres actifs effectifs à partir des caractéristiques retenues du modèle : paramètres actifs, fenêtre de contexte, mode de service (<code>open</code>, <code>hybrid</code>, <code>closed</code>), support multimodal et notes d’architecture comme le MoE ou des surcoûts liés au raisonnement.',
         methodTokensBody: 'Le proxy actuel ajuste l’ancrage avec un volume de calcul par prompt pondéré, défini à partir des tokens d’entrée et de sortie. La génération de sortie est plus fortement pondérée que le traitement de l’entrée, de sorte que les scénarios riches en sortie et les appels LLM répétés augmentent sensiblement l’estimation.',
         methodBoundBody: 'La branche actuelle au niveau prompt est un proxy de screening, pas un benchmark audité. Pour cette raison, l’application renvoie un résultat borné bas-central-haut plutôt qu’une valeur déterministe faussement précise.',
@@ -4818,6 +4834,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['About', 'À propos'],
       ['Contact', 'À propos'],
       ['About us', 'À propos'],
+      ["Arnault Pachot's Dunod book", "Livre Dunod d’Arnault Pachot"],
       ['We work on responsible AI with a focus on methodological rigor, traceability, and real-world decision support. Our work combines scientific research, product design, and operational deployment to make AI systems more transparent, more accountable, and more useful in practice.', 'Nous travaillons sur l’IA responsable avec un accent mis sur la rigueur méthodologique, la traçabilité et l’aide à la décision dans des contextes réels. Notre travail combine recherche scientifique, conception produit et déploiement opérationnel pour rendre les systèmes d’IA plus transparents, plus responsables et plus utiles en pratique.'],
       ['Arnault Pachot is a researcher and entrepreneur, founder of OpenStudio and now founder of Emotia. He works on responsible digital transformation, Green IT, and decision-oriented AI systems. He co-authored the Dunod book ', 'Arnault Pachot est chercheur et entrepreneur, fondateur d’OpenStudio puis d’Emotia. Il travaille sur la transformation numérique responsable, le Green IT et les systèmes d’IA orientés décision. Il a coécrit chez Dunod l’ouvrage '],
       [' dedicated to practical pathways for environmentally responsible AI.', ', consacré à des trajectoires concrètes pour une IA écologiquement responsable.'],
@@ -4847,7 +4864,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Inférence-only estimate based on source-linked scientific indicators and a traceable screening calculation.', 'Estimation limitée à l’inférence, fondée sur des indicateurs scientifiques reliés aux sources et un calcul de screening traçable.'],
       ['ImpactLLM is designed as a transparent screening tool, not as a black-box score. The current release starts from source-linked inference anchors, then exposes a bounded multi-factor proxy rather than a hidden single-number score.', 'ImpactLLM est conçu comme un outil transparent de screening, et non comme un score boîte noire. La version actuelle part d’ancrages d’inférence reliés aux sources, puis expose un proxy multi-facteurs borné plutôt qu’un score unique caché.'],
       ['1. Source-linked literature anchors.', '1. Ancrages bibliographiques reliés aux sources.'],
-      ['The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core is calibrated on Elsworth et al. (2025), which reports a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps.', 'L’estimateur au niveau applicatif part d’indicateurs d’inférence publiés, reliés à une source, un modèle, une géographie et un périmètre système explicites. Dans la version actuelle pour les modèles du marché, le cœur prédictif est calibré sur Elsworth et al. (2025), qui rapporte une énergie médiane de <code>0.24 Wh/prompt</code> pour Gemini Apps.'],
+      ['The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core uses Elsworth et al. (2025) as the main prompt-level calibration anchor, with a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps, and is interpreted alongside other inference references such as the <em>ML.ENERGY Benchmark</em>, Ren et al. (2024), and Li et al. (2025).', 'L’estimateur au niveau applicatif part d’indicateurs d’inférence publiés, reliés à une source, un modèle, une géographie et un périmètre système explicites. Dans la version actuelle pour les modèles du marché, le cœur prédictif utilise Elsworth et al. (2025) comme ancrage principal de calibration au niveau prompt, avec une énergie médiane de <code>0.24 Wh/prompt</code> pour Gemini Apps, et se lit aux côtés d’autres références d’inférence comme le <em>ML.ENERGY Benchmark</em>, Ren et al. (2024) et Li et al. (2025).'],
       ['2. A multi-factor effective-parameter proxy.', '2. Un proxy multi-facteurs en paramètres actifs effectifs.'],
       ['When direct telemetry is unavailable for a target model, ImpactLLM does not rely on a raw parameter multiple alone. It builds an effective active-parameter profile from the retained model characteristics: active parameters, context window, serving mode (<code>open</code>, <code>hybrid</code>, <code>closed</code>), modality support, and architecture notes such as MoE or reasoning-oriented overheads.', 'Quand aucune télémétrie directe n’est disponible pour un modèle cible, ImpactLLM ne repose pas uniquement sur un multiple brut de paramètres. Il construit un profil en paramètres actifs effectifs à partir des caractéristiques retenues du modèle : paramètres actifs, fenêtre de contexte, mode de service (<code>open</code>, <code>hybrid</code>, <code>closed</code>), support multimodal et notes d’architecture comme le MoE ou des surcoûts liés au raisonnement.'],
       ['3. Token volume remains explicit.', '3. Le volume de tokens reste explicite.'],
@@ -5018,8 +5035,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Context: ', 'Contexte : '],
       ['Modalities: ', 'Modalités : '],
       ['Architecture: ', 'Architecture : '],
-      ['The market-model comparison now relies on <code>market_multifactor_prompt_proxy_v1</code>: a prompt-energy screening proxy calibrated on Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume.', 'La comparaison des modèles du marché repose désormais sur <code>market_multifactor_prompt_proxy_v1</code> : un proxy de screening en énergie par prompt calibré sur Elsworth et al. (2025), puis ajusté selon les paramètres actifs, la fenêtre de contexte, le mode de service, le support multimodal, l’overhead d’architecture et un volume de tokens standardisé.'],
-      ['The market-model comparison now relies on market_multifactor_prompt_proxy_v1: a prompt-energy screening proxy calibrated on Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume.', 'La comparaison des modèles du marché repose désormais sur market_multifactor_prompt_proxy_v1 : un proxy de screening en énergie par prompt calibré sur Elsworth et al. (2025), puis ajusté selon les paramètres actifs, la fenêtre de contexte, le mode de service, le support multimodal, l’overhead d’architecture et un volume de tokens standardisé.'],
+      ['The market-model comparison now relies on <code>market_multifactor_prompt_proxy_v1</code>: a prompt-energy screening proxy whose main prompt-level calibration anchor comes from Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume, and interpreted alongside other inference references.', 'La comparaison des modèles du marché repose désormais sur <code>market_multifactor_prompt_proxy_v1</code> : un proxy de screening en énergie par prompt dont l’ancrage principal de calibration au niveau prompt vient de Elsworth et al. (2025), puis ajusté selon les paramètres actifs, la fenêtre de contexte, le mode de service, le support multimodal, l’overhead d’architecture et un volume de tokens standardisé, et interprété aux côtés d’autres références d’inférence.'],
+      ['The market-model comparison now relies on market_multifactor_prompt_proxy_v1: a prompt-energy screening proxy whose main prompt-level calibration anchor comes from Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume, and interpreted alongside other inference references.', 'La comparaison des modèles du marché repose désormais sur market_multifactor_prompt_proxy_v1 : un proxy de screening en énergie par prompt dont l’ancrage principal de calibration au niveau prompt vient de Elsworth et al. (2025), puis ajusté selon les paramètres actifs, la fenêtre de contexte, le mode de service, le support multimodal, l’overhead d’architecture et un volume de tokens standardisé, et interprété aux côtés d’autres références d’inférence.'],
       ['Training energy', 'Énergie d’entraînement'],
       ['Direct training CO2e', 'CO2e direct d’entraînement'],
       ['Training parameters', 'Paramètres d’entraînement'],
