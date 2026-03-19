@@ -2295,7 +2295,10 @@ def market_parameter_sort_value(row):
 
 
 def build_market_models_view(records):
-    rows = build_market_model_predictions(records)
+    rows = sorted(
+        build_market_model_predictions(records),
+        key=lambda item: str(item.get("display_name", "") or item.get("model_id", "") or "").lower(),
+    )
     standard_scenario = rows[0].get("standard_scenario", {}) if rows else {}
     requests_per_hour = standard_scenario.get("requests_per_hour", 0)
     reading_wpm = standard_scenario.get("reading_words_per_minute", 0)
@@ -2836,7 +2839,10 @@ def build_model_detail_index(records):
 
 
 def build_training_models_view(records):
-    rows = build_training_market_predictions(records)
+    rows = sorted(
+        build_training_market_predictions(records),
+        key=lambda item: str(item.get("display_name", "") or item.get("model_id", "") or "").lower(),
+    )
     chart_rows = []
     scatter_chart_rows = []
     factor_heatmap_rows = []
