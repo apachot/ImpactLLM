@@ -109,9 +109,9 @@ where $P_t$ is the retained parameter count, $Tok_t$ is a training-token prior, 
 This second proxy is not used in the application estimator shown to users, which remains inference-only. It is used in the observatory and the comparative tables to avoid suggesting that training impacts can be projected from parameter count alone. The result should still be read as a screening order of magnitude rather than as an audited declaration of model-development impact.
 
 \section{Results and Comparative Outputs}
-The public observatory standardizes model comparison under one hour of active use corresponding to 1,000 input tokens, 550 output tokens, one LLM request per interaction, and approximately 34.6 interactions per hour, derived from a reading-speed convention \cite{brysbaert2019}. The underlying dataset and derived tables were refreshed for the March 2026 release, so the published values mirror the recalculated inference and training columns for the expanded market-model catalog. This provides a common comparison space before application-specific annualization.
+The underlying dataset and derived tables were refreshed for the March 2026 release, so the published values mirror the recalculated inference and training columns for the expanded market-model catalog. For inference, the observatory now emphasizes the central prompt-level proxy per standardized request before any application-specific annualization.
 
-Table \ref{tab:short-results-method} summarizes a few illustrative outputs. The first block shows how the standardized observatory makes model orders of magnitude legible. The second block shows how the same proxy can be annualized at the software-feature level from compact, natural-language scenarios.
+Table \ref{tab:short-results-method} summarizes a few illustrative outputs. The first block shows how the observatory makes model orders of magnitude legible at the request level. The second block shows how the same proxy can be annualized at the software-feature level from compact, natural-language scenarios.
 
 \begin{table}[htbp]
 \centering
@@ -120,11 +120,11 @@ Table \ref{tab:short-results-method} summarizes a few illustrative outputs. The 
 \hline
 Case & Energy & Carbon & Interpretation \\
 \hline
-Ministral 3B, one active hour & 0.19 Wh & 0.0077 gCO$_2$e & Small hybrid model under a French provider-country proxy \\
+Ministral 3B, one standardized request & 0.0056 Wh & 0.0002 gCO$_2$e & Small hybrid model under a French provider-country proxy \\
 \hline
-GPT-5 mini, one active hour & 5.90 Wh & 2.272 gCO$_2$e & Medium proprietary hosted model under a US provider-country proxy \\
+GPT-5 mini, one standardized request & 0.1706 Wh & 0.0657 gCO$_2$e & Medium proprietary hosted model under a US provider-country proxy \\
 \hline
-Claude Opus 4.1, one active hour & 103.53 Wh & 39.860 gCO$_2$e & Very large proprietary estimate illustrating the steep growth of screening orders of magnitude \\
+Claude Opus 4.1, one standardized request & 2.9922 Wh & 1.1520 gCO$_2$e & Very large proprietary estimate illustrating the steep growth of screening orders of magnitude \\
 \hline
 Support chatbot, Ministral 8B, 20{,}000 conversations/month & 2.38 kWh/year & 96 gCO$_2$e/year & Low-carbon annual result despite high usage because the retained electricity factor is favorable \\
 \hline
@@ -140,98 +140,98 @@ These examples illustrate three practical properties of the method. First, annua
 For completeness, Table \ref{tab:catalog-results-method} reports the current calculated values for all 40 market models tracked in the March 2026 release. The purpose of this table is documentary: it makes the observatory outputs directly inspectable in the paper, while the web interface remains the primary medium for interactive exploration.
 
 \begin{longtable}{|L{4.0cm}|L{2.0cm}|L{2.2cm}|L{1.7cm}|L{1.8cm}|}
-\caption{Calculated environmental indicators for the 40 market models currently tracked by ImpactLLM. Inference values correspond to the standardized one-hour scenario used in the observatory. Training values are multi-factor screening estimates.}\label{tab:catalog-results-method}\\
+\caption{Calculated environmental indicators for the 40 market models currently tracked by ImpactLLM. Inference values correspond to the central prompt-level proxy retained by the observatory, expressed per standardized request. Training values are multi-factor screening estimates.}\label{tab:catalog-results-method}\\
 \hline
-Model & Inference Wh/h & Inference gCO$_2$e/h & Training GWh & Training ktCO$_2$e \\
+Model & Inference Wh/request & Inference gCO$_2$e/request & Training GWh & Training ktCO$_2$e \\
 \hline
 \endfirsthead
 \hline
-Model & Inference Wh/h & Inference gCO$_2$e/h & Training GWh & Training ktCO$_2$e \\
+Model & Inference Wh/request & Inference gCO$_2$e/request & Training GWh & Training ktCO$_2$e \\
 \hline
 \endhead
 \hline
-Claude Opus 4.1 & 103.53 & 39.86 & 125.63 & 6749.42 \\
+Claude Opus 4.1 & 2.9922 & 1.1520 & 125.63 & 6749.42 \\
 \hline
-GPT-5.2 & 96.52 & 37.16 & 101.76 & 5467.03 \\
+GPT-5.2 & 2.7897 & 1.0740 & 101.76 & 5467.03 \\
 \hline
-GPT-5.2-pro & 96.52 & 37.16 & 101.76 & 5467.03 \\
+GPT-5.2-pro & 2.7897 & 1.0740 & 101.76 & 5467.03 \\
 \hline
-Grok 4 & 38.04 & 14.65 & 11.31 & 10446.44 \\
+Grok 4 & 1.0994 & 0.4233 & 11.31 & 10446.44 \\
 \hline
-Megatron-Turing NLG 530B & 26.24 & 10.10 & 14.48 & 13373.46 \\
+Megatron-Turing NLG 530B & 0.7583 & 0.2919 & 14.48 & 13373.46 \\
 \hline
-GPT-4 & 26.03 & 10.02 & 14.93 & 801.83 \\
+GPT-4 & 0.7524 & 0.2897 & 14.93 & 801.83 \\
 \hline
-Claude Sonnet 4 & 22.44 & 8.64 & 5.03 & 4642.86 \\
+Claude Sonnet 4 & 0.6486 & 0.2497 & 5.03 & 4642.86 \\
 \hline
-Grok 2 & 8.27 & 3.18 & 2.06 & 1903.86 \\
+Grok 2 & 0.2389 & 0.0920 & 2.06 & 1903.86 \\
 \hline
-Llama 3.1 405B & 19.13 & 7.37 & 5.23 & 4828.64 \\
+Llama 3.1 405B & 0.5530 & 0.2129 & 5.23 & 4828.64 \\
 \hline
-Gopher 280B & 14.31 & 2.57 & 2.29 & 2119.57 \\
+Gopher 280B & 0.4136 & 0.0744 & 2.29 & 2119.57 \\
 \hline
-Gemini 2.5 Pro & 12.46 & 4.80 & 1.26 & 1160.72 \\
+Gemini 2.5 Pro & 0.3601 & 0.1387 & 1.26 & 1160.72 \\
 \hline
-Grok 1 & 5.50 & 2.12 & 2.79 & 2574.94 \\
+Grok 1 & 0.1590 & 0.0612 & 2.79 & 2574.94 \\
 \hline
-Claude 3.5 Sonnet & 10.23 & 3.94 & 0.96 & 888.67 \\
+Claude 3.5 Sonnet & 0.2957 & 0.1139 & 0.96 & 888.67 \\
 \hline
-Claude 3.7 Sonnet & 10.23 & 3.94 & 0.96 & 888.67 \\
+Claude 3.7 Sonnet & 0.2957 & 0.1139 & 0.96 & 888.67 \\
 \hline
-Jurassic-1 Jumbo & 9.30 & 3.58 & 1.42 & 1310.01 \\
+Jurassic-1 Jumbo & 0.2689 & 0.1035 & 1.42 & 1310.01 \\
 \hline
-GPT-3.5 Turbo & 9.16 & 3.53 & 0.98 & 901.55 \\
+GPT-3.5 Turbo & 0.2646 & 0.1019 & 0.98 & 901.55 \\
 \hline
 \hline
-OPT 175B & 8.09 & 3.11 & 1.12 & 1030.35 \\
+OPT 175B & 0.2337 & 0.0900 & 1.12 & 1030.35 \\
 \hline
-LaMDA 1 & 7.26 & 2.79 & 0.56 & 1006.92 \\
+LaMDA 1 & 0.2097 & 0.0807 & 0.56 & 1006.92 \\
 \hline
-Mistral Large & 7.18 & 0.29 & 0.48 & 852.50 \\
+Mistral Large & 0.2074 & 0.0083 & 0.48 & 852.50 \\
 \hline
-GLaM 130B & 6.38 & 2.46 & 0.64 & 1146.57 \\
+GLaM 130B & 0.1845 & 0.0710 & 0.64 & 1146.57 \\
 \hline
-Claude 2 & 6.01 & 2.31 & 0.31 & 563.48 \\
+Claude 2 & 0.1738 & 0.0669 & 0.31 & 563.48 \\
 \hline
-GPT-5 mini & 5.90 & 2.27 & 0.28 & 508.54 \\
+GPT-5 mini & 0.1706 & 0.0657 & 0.28 & 508.54 \\
 \hline
-GPT-5 nano & 5.90 & 2.27 & 0.28 & 508.54 \\
+GPT-5 nano & 0.1706 & 0.0657 & 0.28 & 508.54 \\
 \hline
-Gemini 2.5 Flash & 5.22 & 2.01 & 0.20 & 360.63 \\
+Gemini 2.5 Flash & 0.1508 & 0.0581 & 0.20 & 360.63 \\
 \hline
-Qwen2.5 72B & 3.71 & 2.00 & 0.17 & 296.34 \\
+Qwen2.5 72B & 0.1072 & 0.0579 & 0.17 & 296.34 \\
 \hline
-Llama 3.1 70B & 3.61 & 1.39 & 0.16 & 280.11 \\
+Llama 3.1 70B & 0.1043 & 0.0402 & 0.16 & 280.11 \\
 \hline
-DeepSeek R1 & 2.89 & 1.56 & 12.30 & 11360.91 \\
+DeepSeek R1 & 0.0836 & 0.0451 & 12.30 & 11360.91 \\
 \hline
-DeepSeek V3 & 2.76 & 1.49 & 12.30 & 11360.91 \\
+DeepSeek V3 & 0.0798 & 0.0431 & 12.30 & 11360.91 \\
 \hline
-Gemini 2.5 Flash-Lite & 2.06 & 0.79 & 0.03 & 50.71 \\
+Gemini 2.5 Flash-Lite & 0.0594 & 0.0229 & 0.03 & 50.71 \\
 \hline
-Gemini 2.0 Flash & 2.06 & 0.79 & 0.03 & 50.71 \\
+Gemini 2.0 Flash & 0.0594 & 0.0229 & 0.03 & 50.71 \\
 \hline
-Qwen2.5 32B & 1.72 & 0.93 & 0.03 & 58.54 \\
+Qwen2.5 32B & 0.0496 & 0.0268 & 0.03 & 58.54 \\
 \hline
-Mistral Small 3.1 24B & 1.43 & 0.06 & 0.02 & 36.06 \\
+Mistral Small 3.1 24B & 0.0413 & 0.0017 & 0.02 & 36.06 \\
 \hline
-Claude 3.5 Haiku & 1.43 & 0.55 & 0.02 & 27.27 \\
+Claude 3.5 Haiku & 0.0412 & 0.0159 & 0.02 & 27.27 \\
 \hline
-Codestral 22B & 1.20 & 0.05 & 0.01 & 26.35 \\
+Codestral 22B & 0.0347 & 0.0014 & 0.01 & 26.35 \\
 \hline
-Ministral 8B & 0.49 & 0.02 & 0.00 & 223.32 \\
+Ministral 8B & 0.0142 & 0.0006 & 0.00 & 223.32 \\
 \hline
-GPT-4o mini & 0.54 & 0.21 & 0.00 & 231.14 \\
+GPT-4o mini & 0.0155 & 0.0060 & 0.00 & 231.14 \\
 \hline
-Llama 3.1 8B & 0.46 & 0.18 & 0.00 & 234.49 \\
+Llama 3.1 8B & 0.0133 & 0.0051 & 0.00 & 234.49 \\
 \hline
-Qwen2.5 7B & 0.40 & 0.22 & 0.00 & 179.53 \\
+Qwen2.5 7B & 0.0117 & 0.0063 & 0.00 & 179.53 \\
 \hline
-GPT-OSS 120B & 0.40 & 0.16 & 0.39 & 704.28 \\
+GPT-OSS 120B & 0.0116 & 0.0045 & 0.39 & 704.28 \\
 \hline
-GPT-OSS 20B & 0.26 & 0.10 & 0.01 & 22.69 \\
+GPT-OSS 20B & 0.0074 & 0.0029 & 0.01 & 22.69 \\
 \hline
-Ministral 3B & 0.19 & 0.01 & 0.00 & 59.06 \\
+Ministral 3B & 0.0056 & 0.0002 & 0.00 & 59.06 \\
 \hline
 \end{longtable}
 
@@ -250,11 +250,8 @@ A second family of sources informs the infrastructural and contextual layers nee
 \subsection{Model Documentation and Conceptual Framing}
 Some source families play a different role: they do not provide direct environmental measurements but document model properties or frame the interpretation of the results. Examples include model and provider documentation such as the Llama 3.1 model card \cite{meta2024llama}, broader environmental framing from Rillig et al. \cite{rillig2023}, and earlier conceptual work on sustainable AI and environmental decision support \cite{pachot2022book,pachot2023sustainableai}. The observatory and the site itself are part of this transparency layer because the project republishes those linked records in reusable interfaces \cite{impactllmrepo2026}.
 
-\subsection{Use-Phase and Comparison Conventions}
-Finally, a few references are used to define common use scenarios or contextual comparison devices rather than model-specific environmental values. In the current release, Brysbaert \cite{brysbaert2019} is used to anchor the reading-speed convention behind the standardized one-hour observatory scenario. This kind of contextual reference matters because comparative results depend not only on environmental anchors, but also on the retained usage normalization and interpretation framework.
-
 \section{Discussion and Perspectives}
-Beyond the catalog table and the static release timelines, the observatory can also be read as a dynamic screening signal about the acceleration of frontier-model impacts. Figures \ref{fig:training-doubling} and \ref{fig:inference-doubling} summarize that intuition with a simple log-linear reading of the GPT, Claude, and Grok flagship series. The purpose is not to claim a physical law or a universal growth constant. It is to provide a compact interpretation of the retained central estimates under the current observatory assumptions.
+Beyond the catalog table and the static release timelines, the observatory can also be read as a dynamic screening signal about the acceleration of frontier-model impacts. Figure \ref{fig:training-doubling} summarizes that intuition with a simple log-linear reading of the GPT, Claude, and Grok flagship series for retained training impacts. The purpose is not to claim a physical law or a universal growth constant. It is to provide a compact interpretation of the retained central estimates under the current observatory assumptions.
 
 \begin{figure}[ht]
 \centering
@@ -263,16 +260,9 @@ Beyond the catalog table and the static release timelines, the observatory can a
 \label{fig:training-doubling}
 \end{figure}
 
-\begin{figure}[ht]
-\centering
-\includegraphics[width=0.92\linewidth]{figures/paper_inference_co2_doubling.png}
-\caption{Illustrative reading of the observatory's central inference-screening estimates for flagship GPT, Claude, and Grok models, using the standardized one-hour scenario retained by the site.}
-\label{fig:inference-doubling}
-\end{figure}
+Two lessons follow from this perspective view. First, training remains the dimension where screening values grow fastest. This is consistent with the current screening structure: training combines retained parameter count, token priors, architecture effects, and hardware assumptions, so frontier-model scaling quickly reaches very high orders of magnitude. Inference, by contrast, is represented in this paper at the per-request level, where comparisons remain useful but less visually dominant than the corresponding training orders of magnitude.
 
-Two lessons follow from these perspective views. First, the apparent acceleration is stronger for training than for inference. This is consistent with the current screening structure: training combines retained parameter count, token priors, architecture effects, and hardware assumptions, so frontier-model scaling quickly reaches very high orders of magnitude. Inference, by contrast, is partially damped by the standardized use scenario and by the fact that active compute per request does not necessarily grow as fast as total model size.
-
-Second, these visuals are useful precisely because they remain interpretive rather than declarative. They help communicate that the observatory does not only contain isolated point estimates; it also suggests a market trajectory in which the environmental stakes of frontier models may be rising rapidly. But the value of that reading depends entirely on the transparency of the underlying assumptions. If those assumptions change, the apparent doubling times change as well. The figures should therefore be read as discussion tools and policy prompts, not as direct provider-side measurements or immutable forecasting laws.
+Second, these visuals are useful precisely because they remain interpretive rather than declarative. They help communicate that the observatory does not only contain isolated point estimates; it also suggests a market trajectory in which the environmental stakes of frontier models may be rising rapidly. But the value of that reading depends entirely on the transparency of the underlying assumptions. If those assumptions change, the apparent doubling times change as well. The figure should therefore be read as a discussion tool and policy prompt, not as a direct provider-side measurement or immutable forecasting law.
 
 From a policy and governance perspective, this is arguably one of the most useful roles an open observatory can play. Even without direct industrial telemetry, it can surface the possibility that model-scale growth is outpacing the public visibility of environmental reporting. In that sense, the discussion value of the observatory is not limited to ranking models; it also lies in making structural trends legible enough to motivate better disclosure, more granular reporting, and more disciplined debate.
 
