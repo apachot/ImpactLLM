@@ -22,6 +22,7 @@ from core.estimator import (
     compute_token_ratio,
     estimate_feature_externalities,
     get_record,
+    get_country_mix,
     load_country_energy_mix,
     load_market_models,
     load_models,
@@ -2407,7 +2408,12 @@ def build_market_models_view(records):
             }
         )
         training_energy_central = to_float(row.get("training_energy_wh_central"), default=0.0)
-        training_carbon_central = to_float(row.get("training_carbon_tco2e_central"), default=0.0)
+        country_mix = get_country_mix(row.get("estimation_country_code"))
+        retained_grid_carbon_intensity = to_float((country_mix or {}).get("grid_carbon_intensity_gco2_per_kwh"), default=None)
+        if retained_grid_carbon_intensity is not None:
+            training_carbon_central = wh_to_gco2e(training_energy_central, retained_grid_carbon_intensity) / 1_000_000.0
+        else:
+            training_carbon_central = to_float(row.get("training_carbon_tco2e_central"), default=0.0)
         cross_impact_chart_rows.append(
             {
                 "label": row.get("display_name", row.get("model_id", "")),
@@ -2738,11 +2744,20 @@ def build_model_detail_index(records):
             "central": to_float(training_energy_range.get("central"), default=to_float(row.get("training_energy_wh_central"), default=0.0)),
             "high": to_float(training_energy_range.get("high"), default=to_float(row.get("training_energy_wh_high"), default=0.0)),
         }
-        training_carbon = {
-            "low": to_float(training_carbon_range.get("low"), default=to_float(row.get("training_carbon_tco2e_low"), default=0.0)),
-            "central": to_float(training_carbon_range.get("central"), default=to_float(row.get("training_carbon_tco2e_central"), default=0.0)),
-            "high": to_float(training_carbon_range.get("high"), default=to_float(row.get("training_carbon_tco2e_high"), default=0.0)),
-        }
+        country_mix = get_country_mix(row.get("estimation_country_code"))
+        retained_grid_carbon_intensity = to_float((country_mix or {}).get("grid_carbon_intensity_gco2_per_kwh"), default=None)
+        if retained_grid_carbon_intensity is not None:
+            training_carbon = {
+                "low": wh_to_gco2e(training_energy["low"], retained_grid_carbon_intensity) / 1_000_000.0,
+                "central": wh_to_gco2e(training_energy["central"], retained_grid_carbon_intensity) / 1_000_000.0,
+                "high": wh_to_gco2e(training_energy["high"], retained_grid_carbon_intensity) / 1_000_000.0,
+            }
+        else:
+            training_carbon = {
+                "low": to_float(training_carbon_range.get("low"), default=to_float(row.get("training_carbon_tco2e_low"), default=0.0)),
+                "central": to_float(training_carbon_range.get("central"), default=to_float(row.get("training_carbon_tco2e_central"), default=0.0)),
+                "high": to_float(training_carbon_range.get("high"), default=to_float(row.get("training_carbon_tco2e_high"), default=0.0)),
+            }
 
         source_entries = []
         seen_sources = set()
@@ -2890,13 +2905,25 @@ def build_training_models_view(records):
             "central": to_float(carbon_range.get("central"), default=direct_carbon_value),
             "high": to_float(carbon_range.get("high"), default=direct_carbon_value),
         }
+        country_mix = get_country_mix(row.get("estimation_country_code"))
+        retained_grid_carbon_intensity = to_float((country_mix or {}).get("grid_carbon_intensity_gco2_per_kwh"), default=None)
+        if retained_grid_carbon_intensity is not None:
+            display_carbon_value = wh_to_gco2e(direct_energy_value, retained_grid_carbon_intensity) / 1_000_000.0
+            display_carbon_range = {
+                "low": wh_to_gco2e(direct_energy_range["low"], retained_grid_carbon_intensity) / 1_000_000.0,
+                "central": wh_to_gco2e(direct_energy_range["central"], retained_grid_carbon_intensity) / 1_000_000.0,
+                "high": wh_to_gco2e(direct_energy_range["high"], retained_grid_carbon_intensity) / 1_000_000.0,
+            }
+        else:
+            display_carbon_value = direct_carbon_value
+            display_carbon_range = direct_carbon_range
         chart_rows.append(
             {
                 "label": row.get("display_name", row.get("model_id", "")),
                 "provider": row.get("provider", ""),
                 "kind": "model",
                 "direct_training_energy_wh": direct_energy_value,
-                "direct_training_carbon_tco2e": direct_carbon_value,
+                "direct_training_carbon_tco2e": display_carbon_value,
             }
         )
         scatter_chart_rows.append(
@@ -2911,7 +2938,7 @@ def build_training_models_view(records):
                 "moe_score": 1.0 if "moe" in architecture_notes else 0.0,
                 "reasoning_score": 1.0 if "reason" in architecture_notes else 0.0,
                 "direct_training_energy_wh": direct_energy_value,
-                "direct_training_carbon_tco2e": direct_carbon_value,
+                "direct_training_carbon_tco2e": display_carbon_value,
             }
         )
         factor_heatmap_rows.append(
@@ -2932,19 +2959,19 @@ def build_training_models_view(records):
             {
                 "label": row.get("display_name", row.get("model_id", "")),
                 "provider": provider,
-                "low": direct_carbon_range["low"],
-                "central": direct_carbon_range["central"],
-                "high": direct_carbon_range["high"],
+                "low": display_carbon_range["low"],
+                "central": display_carbon_range["central"],
+                "high": display_carbon_range["high"],
             }
         )
         release_date = row.get("release_date", "")
-        if release_date and direct_carbon_value > 0:
+        if release_date and display_carbon_value > 0:
             release_timeline_rows.append(
                 {
                     "label": row.get("display_name", row.get("model_id", "")),
                     "provider": provider,
                     "release_date": release_date,
-                    "direct_training_carbon_tco2e": direct_carbon_value,
+                    "direct_training_carbon_tco2e": display_carbon_value,
                 }
             )
         body.append(
@@ -2953,7 +2980,7 @@ def build_training_models_view(records):
               <td>{render_model_detail_trigger(row)}</td>
               <td data-sort-value="{escape(market_parameter_sort_value(row), quote=True)}">{escape(format_market_parameter_display(row))}</td>
               <td>{escape(format_training_estimate(direct_energy_value, 'Wh'))}</td>
-              <td>{escape(format_training_estimate(direct_carbon_value, 'tCO2e'))}</td>
+              <td>{escape(format_training_estimate(display_carbon_value, 'tCO2e'))}</td>
             </tr>
             """
         )
@@ -3012,7 +3039,7 @@ def render_training_models_charts(records):
           <h3>Comparative training impacts of models</h3>
         </div>
       </div>
-      <p class="summary-intro">The chart below shows the central values retained for all catalog models across two training indicator families: training energy and direct training CO2e. The current screening method combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Under these central screening assumptions, frontier models can reach very large training orders of magnitude. Everyday benchmarks are inserted directly into the list to situate those scales, not to imply direct observed equivalence.</p>
+      <p class="summary-intro">The chart below shows the central values retained for all catalog models across two training indicator families: training energy and training CO2e contextualized from retained training energy and the model country proxy. The current screening method combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Under these central screening assumptions, frontier models can reach very large training orders of magnitude. Everyday benchmarks are inserted directly into the list to situate those scales, not to imply direct observed equivalence.</p>
       <div class="chart-tabbar" role="tablist" aria-label="Training chart indicator">
         <button type="button" class="chart-tab-button is-active" data-training-chart-control="metric-tab" data-metric-value="direct_training_energy" aria-selected="true">Energy</button>
         <button type="button" class="chart-tab-button" data-training-chart-control="metric-tab" data-metric-value="direct_training_carbon" aria-selected="false">Carbon</button>
@@ -3047,7 +3074,7 @@ def render_training_models_charts(records):
           <h3>Training uncertainty span by model</h3>
         </div>
       </div>
-      <p class="summary-intro">This view shows the low, central, and high direct training CO2e values retained by the project for each market model. It makes explicit how widely the training proxy can vary once the parameter and token exponents and contextual factors are widened.</p>
+      <p class="summary-intro">This view shows the low, central, and high training CO2e values contextualized from retained training energy for each market model. It makes explicit how widely the training proxy can vary once the parameter and token exponents and contextual factors are widened.</p>
       <div id="training-uncertainty-chart" class="models-impact-chart" data-training-uncertainty-rows='{escape(json.dumps(view["uncertainty_chart_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     <section class="panel reference-panel">
@@ -3057,24 +3084,24 @@ def render_training_models_charts(records):
           <h3>Training carbon vs. parameter count</h3>
         </div>
       </div>
-      <p class="summary-intro">This complementary view places models by retained parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.</p>
+      <p class="summary-intro">This complementary view places models by retained parameter count on the horizontal axis and by contextualized training CO2e on the vertical axis, using logarithmic scaling on both axes.</p>
       <div id="training-carbon-params-log-chart" class="models-impact-chart" data-training-scatter-chart-rows='{escape(json.dumps(view["scatter_chart_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     <section class="panel reference-panel">
       <div class="summary-header">
         <div>
           <div class="summary-kicker">Timeline</div>
-          <h3>Training carbon by model release date</h3>
+          <h3>Training CO2e by model release date</h3>
         </div>
       </div>
-      <p class="summary-intro">This timeline follows the evolution of the project’s retained direct training CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.</p>
+      <p class="summary-intro">This timeline follows the evolution of the project’s retained training CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.</p>
       <div id="training-release-timeline-chart" class="models-impact-chart" data-training-release-timeline-rows='{escape(json.dumps(view["release_timeline_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     <section class="panel reference-panel">
       <div class="summary-header">
         <div>
           <div class="summary-kicker">Perspective</div>
-          <h3>Training CO2 doubling view</h3>
+          <h3>Training CO2e doubling view</h3>
         </div>
       </div>
       <p class="summary-intro">This chart compresses the central training screening values of flagship GPT, Claude, and Grok models into a simple doubling-time interpretation. It is meant as a discussion support to make structural acceleration legible, not as a claim of direct industrial telemetry.</p>
@@ -3097,7 +3124,7 @@ def render_training_models_table(records):
           <h3>{len(rows)} current models with estimated training impacts</h3>
         </div>
       </div>
-      <p class="summary-intro">This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>direct training CO2e</strong>. The current screening proxy combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Training energy therefore remains a more fragile screening reconstruction than direct carbon.</p>
+      <p class="summary-intro">This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>training CO2e</strong> contextualized from that retained energy and the model country proxy. The current screening proxy combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy.</p>
       <div class="table-toolbar">
         <label class="table-search-label" for="training-model-search">Search for a model</label>
         <input id="training-model-search" class="table-search-input" type="search" placeholder="Example: GPT, Claude, 70B, Meta" data-table-search="training-models-table">
@@ -3109,7 +3136,7 @@ def render_training_models_table(records):
               <th><button type="button" class="sort-button" data-sort-table="training-models-table" data-sort-index="0" data-sort-type="text">Model</button></th>
               <th><button type="button" class="sort-button" data-sort-table="training-models-table" data-sort-index="1" data-sort-type="number">Parameters</button></th>
               <th><button type="button" class="sort-button" data-sort-table="training-models-table" data-sort-index="2" data-sort-type="number">Training energy</button></th>
-              <th><button type="button" class="sort-button" data-sort-table="training-models-table" data-sort-index="3" data-sort-type="number">Direct training CO2e</button></th>
+              <th><button type="button" class="sort-button" data-sort-table="training-models-table" data-sort-index="3" data-sort-type="number">Training CO2e</button></th>
             </tr>
           </thead>
           <tbody>{view["table_body"]}</tbody>
@@ -4835,7 +4862,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         chartFamilyPage: 'page',
         chartMetricEnergy: 'Energy',
         chartMetricCarbon: 'Carbon',
-        trainingMetricCarbon: 'Direct training CO2e',
+        trainingMetricCarbon: 'Training CO2e',
         comparisonEstimatedPrefix: 'Comparison of estimated central values over 1 hour of active use for the ',
         comparisonEstimatedMiddle: ' indicator, using the ',
         comparisonEstimatedSuffix: ' family.',
@@ -4868,7 +4895,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         chartFamilyPage: 'page',
         chartMetricEnergy: 'Énergie',
         chartMetricCarbon: 'Carbone',
-        trainingMetricCarbon: 'CO2e direct d’entraînement',
+        trainingMetricCarbon: 'CO2e d’entraînement',
         comparisonEstimatedPrefix: 'Comparaison des valeurs centrales estimées sur 1 heure d’utilisation active pour l’indicateur ',
         comparisonEstimatedMiddle: ', selon la famille ',
         comparisonEstimatedSuffix: '.',
@@ -5026,13 +5053,13 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['This scatter plot compares each catalog model on two axes at once: standardized inference impact over one hour on the horizontal axis and retained training impact on the vertical axis. Point size follows the retained active parameter count, while colors distinguish providers.', 'Ce nuage de points compare chaque modèle du catalogue sur deux axes à la fois : l’impact d’inférence standardisé sur une heure sur l’axe horizontal et l’impact d’entraînement retenu sur l’axe vertical. La taille des points suit le nombre de paramètres actifs retenu, tandis que les couleurs distinguent les fournisseurs.'],
       ['This heatmap exposes the central screening factors retained for each market model. It shows the four multiplicative factors used by the project’s prompt proxy and the resulting ratio between effective and raw active parameters.', 'Cette heatmap rend visibles les facteurs centraux de screening retenus pour chaque modèle du marché. Elle montre les quatre facteurs multiplicatifs utilisés par le proxy prompt du projet ainsi que le ratio résultant entre paramètres actifs effectifs et paramètres actifs bruts.'],
       ['This heatmap exposes the central screening factors retained for each market model in the training proxy. It shows the regime, architecture, and hardware factors together with the retained training-token ratio per parameter.', 'Cette heatmap rend visibles les facteurs centraux de screening retenus pour chaque modèle du marché dans le proxy d’entraînement. Elle montre les facteurs de régime, d’architecture et de matériel, ainsi que le ratio retenu de tokens d’entraînement par paramètre.'],
-      ['This view shows the low, central, and high direct training CO2e values retained by the project for each market model. It makes explicit how widely the training proxy can vary once the parameter and token exponents and contextual factors are widened.', 'Cette vue montre, pour chaque modèle du marché, les valeurs basse, centrale et haute de CO2e direct d’entraînement retenues par le projet. Elle rend explicite l’ampleur de variation possible du proxy d’entraînement lorsque les exposants sur les paramètres et les tokens, ainsi que les facteurs contextuels, sont élargis.'],
+      ['This view shows the low, central, and high training CO2e values retained by the project for each market model, contextualized from retained training energy and the model country proxy. It makes explicit how widely the training proxy can vary once the parameter and token exponents and contextual factors are widened.', 'Cette vue montre, pour chaque modèle du marché, les valeurs basse, centrale et haute de CO2e d’entraînement retenues par le projet, contextualisées à partir de l’énergie d’entraînement retenue et du proxy pays du modèle. Elle rend explicite l’ampleur de variation possible du proxy d’entraînement lorsque les exposants sur les paramètres et les tokens, ainsi que les facteurs contextuels, sont élargis.'],
       ['This complementary view places models by retained active parameter count on the horizontal axis and by central inference carbon over one hour on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres actifs retenus sur l’axe horizontal et leur carbone central d’inférence sur une heure sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
       ['This timeline follows the evolution of the project’s central inference CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.', 'Cette chronologie suit l’évolution dans le temps de l’estimation centrale du CO2e d’inférence du projet pour les familles OpenAI, Claude, Grok et Mistral, en utilisant le mois de sortie de chaque modèle comme axe horizontal.'],
       ['This view compares central inference energy and carbon over one hour, while coloring each model by the retained electricity-mix country used for carbon recalculation. It helps separate model-size effects from country-mix effects.', 'Cette vue compare l’énergie et le carbone centraux d’inférence sur une heure, en colorant chaque modèle selon le pays de mix électrique retenu pour le recalcul du carbone. Elle aide à distinguer les effets de taille de modèle des effets de mix pays.'],
       ['This landscape view clusters the catalog models from the characteristics retained by the project for training screening: retained parameter count, training-token prior, training regime, hardware-class proxy, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.', 'Cette vue de paysage regroupe les modèles du catalogue à partir des caractéristiques retenues par le projet pour le screening en entraînement : nombre de paramètres retenu, prior sur les tokens d’entraînement, régime d’entraînement, proxy de classe matérielle, support multimodal, notes d’architecture, ainsi que sorties centrales d’énergie et de carbone d’entraînement. Des points proches indiquent des profils de screening retenus similaires plutôt qu’un classement direct sur un seul axe.'],
-      ['This complementary view places models by retained parameter count on the horizontal axis and by direct training CO2e on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres retenu sur l’axe horizontal et leur CO2e direct d’entraînement sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
-      ['This timeline follows the evolution of the project’s retained direct training CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.', 'Cette chronologie suit l’évolution dans le temps de l’estimation retenue du CO2e direct d’entraînement du projet pour les familles OpenAI, Claude, Grok et Mistral, en utilisant le mois de sortie de chaque modèle comme axe horizontal.'],
+      ['This complementary view places models by retained parameter count on the horizontal axis and by training CO2e contextualized from retained training energy on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres retenu sur l’axe horizontal et leur CO2e d’entraînement contextualisé à partir de l’énergie d’entraînement retenue sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
+      ['This timeline follows the evolution of the project’s retained training CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.', 'Cette chronologie suit l’évolution dans le temps de l’estimation retenue du CO2e d’entraînement du projet pour les familles OpenAI, Claude, Grok et Mistral, en utilisant le mois de sortie de chaque modèle comme axe horizontal.'],
       ['3. Carbon derivation from the country mix', '3. Dérivation du carbone à partir du mix pays'],
       ['Carbon is not reused directly from the literature. It is derived from extrapolated energy using the retained country electricity mix, here', 'Le carbone n’est pas réutilisé directement depuis la littérature. Il est dérivé de l’énergie extrapolée à partir du mix électrique du pays retenu, ici'],
       ['The unit result retained for this method then leads to the following annualized values: energy', 'Le résultat unitaire retenu pour cette méthode conduit ensuite aux valeurs annualisées suivantes : énergie'],
@@ -5061,10 +5088,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['Comparative environmental impact of models', 'Impact environnemental comparatif des modèles'],
       ['current models tracked by the project', 'modèles actuels suivis par le projet'],
       ['Comparative training impacts of models', 'Impacts d’entraînement comparés des modèles'],
-      ['The chart below shows the central values retained for all catalog models across two training indicator families: training energy and direct training CO2e. The current screening method combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Under these central screening assumptions, frontier models can reach very large training orders of magnitude. Everyday benchmarks are inserted directly into the list to situate those scales, not to imply direct observed equivalence.', 'Le graphique ci-dessous présente les valeurs centrales retenues pour tous les modèles du catalogue selon deux familles d’indicateurs d’entraînement : l’énergie d’entraînement et le CO2e direct d’entraînement. La méthode actuelle de screening combine le nombre de paramètres retenu, un prior sur les tokens d’entraînement, un prior sur le régime d’entraînement, des caractéristiques d’architecture et un proxy de classe matérielle. Sous ces hypothèses centrales de screening, les modèles de frontière peuvent atteindre des ordres de grandeur d’entraînement très élevés. Des repères du quotidien sont intégrés directement à la liste pour situer ces échelles, sans prétendre à une équivalence observée directe.'],
+      ['The chart below shows the central values retained for all catalog models across two training indicator families: training energy and training CO2e contextualized from retained training energy and the model country proxy. The current screening method combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Under these central screening assumptions, frontier models can reach very large training orders of magnitude. Everyday benchmarks are inserted directly into the list to situate those scales, not to imply direct observed equivalence.', 'Le graphique ci-dessous présente les valeurs centrales retenues pour tous les modèles du catalogue selon deux familles d’indicateurs d’entraînement : l’énergie d’entraînement et le CO2e d’entraînement contextualisé à partir de l’énergie d’entraînement retenue et du proxy pays du modèle. La méthode actuelle de screening combine le nombre de paramètres retenu, un prior sur les tokens d’entraînement, un prior sur le régime d’entraînement, des caractéristiques d’architecture et un proxy de classe matérielle. Sous ces hypothèses centrales de screening, les modèles de frontière peuvent atteindre des ordres de grandeur d’entraînement très élevés. Des repères du quotidien sont intégrés directement à la liste pour situer ces échelles, sans prétendre à une équivalence observée directe.'],
       ['Benchmarks integrated into the chart: household electricity for <strong>2,760,139 households</strong> over one year of domestic use, i.e. ≈ <strong>6.90 TWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>6,166,824.9 tCO2e</strong> for <strong>292,210 full flights</strong>. These comparison points are aligned with the current central screening order of magnitude of Claude Opus 4.1 in the training chart, not with a direct provider-side measurement.', 'Repères intégrés au graphique : électricité domestique pour <strong>2 760 139 foyers</strong> sur une année d’usage résidentiel, soit ≈ <strong>6,90 TWh</strong> sur la base d’une consommation moyenne de 2 500 kWh par foyer (estimation RTE 2021), et aviation commerciale complète dérivée de Klöwer et al. (2025) à partir de 577.97 MtCO2 et 27.45 millions de vols commerciaux observés en 2023, soit ≈ <strong>6 166 824,9 tCO2e</strong> pour <strong>292 210 vols complets</strong>. Ces repères sont alignés sur l’ordre de grandeur central actuel du screening pour Claude Opus 4.1 dans le graphique d’entraînement, et non sur une mesure directe côté fournisseur.'],
       ['current models with estimated training impacts', 'modèles actuels avec impacts d’entraînement estimés'],
-      ['This table projects the training orders of magnitude of current models from the indicator families actually available in the literature: <strong>training energy</strong> derived from emissions when the source country is documented in the electricity-mix table, and <strong>direct training CO2e</strong>. The current screening proxy combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy. Training energy therefore remains a more fragile screening reconstruction than direct carbon.', 'Ce tableau projette les ordres de grandeur d’entraînement des modèles actuels à partir des familles d’indicateurs réellement disponibles dans la littérature : <strong>l’énergie d’entraînement</strong>, dérivée des émissions lorsque le pays source est documenté dans la table des mixes électriques, et le <strong>CO2e direct d’entraînement</strong>. Le proxy de screening actuel combine le nombre de paramètres retenu, un prior sur les tokens d’entraînement, un prior sur le régime d’entraînement, des caractéristiques d’architecture et un proxy de classe matérielle. L’énergie d’entraînement reste donc une reconstruction de screening plus fragile que le carbone direct.'],
+      ['This table projects the training orders of magnitude of current models from the indicator families actually available in the literature, using <strong>training energy</strong> as the primary anchor and deriving <strong>training CO2e</strong> from the retained model-country electricity mix. The current screening proxy combines retained parameter count, a training-token prior, a training-regime prior, architecture features, and a hardware-class proxy.', 'Ce tableau projette les ordres de grandeur d’entraînement des modèles actuels à partir des familles d’indicateurs réellement disponibles dans la littérature, en utilisant <strong>l’énergie d’entraînement</strong> comme ancrage principal et en dérivant le <strong>CO2e d’entraînement</strong> à partir du mix électrique du pays retenu pour le modèle. Le proxy de screening actuel combine le nombre de paramètres retenu, un prior sur les tokens d’entraînement, un prior sur le régime d’entraînement, des caractéristiques d’architecture et un proxy de classe matérielle.'],
       ['`*` indicates an estimated parameter count rather than a provider-published value.', '`*` indique un nombre de paramètres estimé plutôt qu’une valeur publiée par le fournisseur.'],
       ['Source annex used in the site', 'Annexe des sources utilisées sur le site'],
       ['Inference reference set', 'Jeu de références pour l’inférence'],
@@ -5100,7 +5127,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['The market-model comparison now relies on <code>market_multifactor_prompt_proxy_v1</code>: a prompt-energy screening proxy whose main prompt-level calibration anchor comes from Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume, and interpreted alongside other inference references.', 'La comparaison des modèles du marché repose désormais sur <code>market_multifactor_prompt_proxy_v1</code> : un proxy de screening en énergie par prompt dont l’ancrage principal de calibration au niveau prompt vient de Elsworth et al. (2025), puis ajusté selon les paramètres actifs, la fenêtre de contexte, le mode de service, le support multimodal, l’overhead d’architecture et un volume de tokens standardisé, et interprété aux côtés d’autres références d’inférence.'],
       ['The market-model comparison now relies on market_multifactor_prompt_proxy_v1: a prompt-energy screening proxy whose main prompt-level calibration anchor comes from Elsworth et al. (2025), then adjusted by active parameters, context window, serving mode, modality support, architecture overhead, and standardized token volume, and interpreted alongside other inference references.', 'La comparaison des modèles du marché repose désormais sur market_multifactor_prompt_proxy_v1 : un proxy de screening en énergie par prompt dont l’ancrage principal de calibration au niveau prompt vient de Elsworth et al. (2025), puis ajusté selon les paramètres actifs, la fenêtre de contexte, le mode de service, le support multimodal, l’overhead d’architecture et un volume de tokens standardisé, et interprété aux côtés d’autres références d’inférence.'],
       ['Training energy', 'Énergie d’entraînement'],
-      ['Direct training CO2e', 'CO2e direct d’entraînement'],
+      ['Training CO2e', 'CO2e d’entraînement'],
       ['Training parameters', 'Paramètres d’entraînement'],
       ['Training modality', 'Modalité d’entraînement'],
       ['Training hardware', 'Matériel d’entraînement'],
@@ -5982,9 +6009,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         `;
       }}).join('');
       const intro = currentLanguage.value === 'fr'
-        ? 'Chaque ligne montre la borne basse, la valeur centrale et la borne haute du CO2e direct d’entraînement retenu pour un modèle.'
-        : 'Each line shows the low, central, and high retained values for direct training CO2e.';
-      const xLabel = currentLanguage.value === 'fr' ? 'CO2e direct d’entraînement, tCO2e (échelle logarithmique)' : 'Direct training CO2e, tCO2e (log scale)';
+        ? 'Chaque ligne montre la borne basse, la valeur centrale et la borne haute du CO2e d’entraînement contextualisé à partir de l’énergie d’entraînement retenue pour un modèle.'
+        : 'Each line shows the low, central, and high retained values for training CO2e contextualized from retained training energy.';
+      const xLabel = currentLanguage.value === 'fr' ? 'CO2e d’entraînement, tCO2e (échelle logarithmique)' : 'Training CO2e, tCO2e (log scale)';
       trainingUncertaintyChart.innerHTML = `
         <div class="summary-intro" style="margin-bottom:0.75rem;">${{intro}}</div>
         <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="Training uncertainty span by model">
@@ -6426,16 +6453,16 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
             xKey: 'hour_carbon_gco2e',
             yKey: 'direct_training_carbon_tco2e',
             intro: {{
-              en: 'Positioning of models by central inference carbon over one standardized hour of use and retained direct training CO2e. Both axes use logarithmic scaling because the model catalog spans several orders of magnitude.',
-              fr: 'Positionnement des modèles selon leur carbone central d’inférence sur une heure d’usage standardisée et leur CO2e direct d’entraînement retenu. Les deux axes utilisent une échelle logarithmique car le catalogue couvre plusieurs ordres de grandeur.',
+              en: 'Positioning of models by central inference carbon over one standardized hour of use and retained training CO2e contextualized from retained training energy. Both axes use logarithmic scaling because the model catalog spans several orders of magnitude.',
+              fr: 'Positionnement des modèles selon leur carbone central d’inférence sur une heure d’usage standardisée et leur CO2e d’entraînement retenu, contextualisé à partir de l’énergie d’entraînement retenue. Les deux axes utilisent une échelle logarithmique car le catalogue couvre plusieurs ordres de grandeur.',
             }},
             xLabel: {{
               en: 'Central inference carbon, gCO2e/h (log scale)',
               fr: 'Carbone central d’inférence, gCO2e/h (échelle logarithmique)',
             }},
             yLabel: {{
-              en: 'Direct training CO2e, tCO2e (log scale)',
-              fr: 'CO2e direct d’entraînement, tCO2e (échelle logarithmique)',
+              en: 'Training CO2e, tCO2e (log scale)',
+              fr: 'CO2e d’entraînement, tCO2e (échelle logarithmique)',
             }},
             formatX: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kg` : `${{value.toFixed(1)}} g`,
             formatY: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kt` : `${{value.toFixed(1)}} t`,
@@ -7226,10 +7253,10 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         `;
       }}).join('');
       const intro = currentLanguage.value === 'fr'
-        ? 'Positionnement des modèles selon leur nombre de paramètres retenu et leur CO2e direct d’entraînement, en échelle logarithmique.'
-        : 'Positioning of models by retained parameter count and direct training CO2e, on logarithmic axes.';
+        ? 'Positionnement des modèles selon leur nombre de paramètres retenu et leur CO2e d’entraînement contextualisé à partir de l’énergie d’entraînement retenue, en échelle logarithmique.'
+        : 'Positioning of models by retained parameter count and training CO2e contextualized from retained training energy, on logarithmic axes.';
       const xLabel = currentLanguage.value === 'fr' ? 'Nombre de paramètres retenu' : 'Retained parameter count';
-      const yLabel = currentLanguage.value === 'fr' ? 'CO2e direct d’entraînement, tCO2e' : 'Direct training CO2e, tCO2e';
+      const yLabel = currentLanguage.value === 'fr' ? 'CO2e d’entraînement, tCO2e' : 'Training CO2e, tCO2e';
       trainingScatterLogChart.innerHTML = `
         <div class="summary-intro" style="margin-bottom:0.75rem;">${{intro}}</div>
         <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="Training carbon versus parameter count chart">
@@ -7247,16 +7274,16 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       valueKey: 'direct_training_carbon_tco2e',
       formatValue: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kt` : `${{value.toFixed(1)}} t`,
       intro: {{
-        en: 'Connected points trace the release sequence of OpenAI, Claude, Grok, and Mistral models against the project’s retained direct training CO2e estimate. The vertical axis uses a logarithmic scale because training orders of magnitude remain widely spread.',
-        fr: 'Les points reliés retracent la séquence de sortie des modèles OpenAI, Claude, Grok et Mistral face à l’estimation retenue du CO2e direct d’entraînement du projet. L’axe vertical utilise une échelle logarithmique car les ordres de grandeur d’entraînement restent très dispersés.'
+        en: 'Connected points trace the release sequence of OpenAI, Claude, Grok, and Mistral models against the project’s retained training CO2e estimate contextualized from retained training energy. The vertical axis uses a logarithmic scale because training orders of magnitude remain widely spread.',
+        fr: 'Les points reliés retracent la séquence de sortie des modèles OpenAI, Claude, Grok et Mistral face à l’estimation retenue du CO2e d’entraînement du projet, contextualisée à partir de l’énergie d’entraînement retenue. L’axe vertical utilise une échelle logarithmique car les ordres de grandeur d’entraînement restent très dispersés.'
       }},
       xLabel: {{
         en: 'Model release month',
         fr: 'Mois de sortie du modèle',
       }},
       yLabel: {{
-        en: 'Direct training CO2e, tCO2e (log scale)',
-        fr: 'CO2e direct d’entraînement, tCO2e (échelle logarithmique)',
+        en: 'Training CO2e, tCO2e (log scale)',
+        fr: 'CO2e d’entraînement, tCO2e (échelle logarithmique)',
       }},
       ariaLabel: {{
         en: 'Training carbon by model release date chart',
@@ -7276,8 +7303,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         fr: 'Mois de sortie du modèle',
       }},
       yLabel: {{
-        en: 'Direct training CO2e, tCO2e (log scale)',
-        fr: 'CO2e direct d’entraînement, tCO2e (échelle logarithmique)',
+        en: 'Training CO2e, tCO2e (log scale)',
+        fr: 'CO2e d’entraînement, tCO2e (échelle logarithmique)',
       }},
       ariaLabel: {{
         en: 'Training CO2 doubling view',
