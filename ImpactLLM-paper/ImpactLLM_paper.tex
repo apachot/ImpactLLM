@@ -73,7 +73,7 @@ Formally, let $E_a = 0.24$ Wh be the anchor value and $P_a = 180$ the active-par
 \begin{equation}
 V_t = T_{in} + \omega T_{out},
 \end{equation}
-with $\omega = 1.8$ in the current release. This value is used as an internal screening prior: its role is to reflect, in a simple and auditable way, that autoregressive output generation is typically more compute-intensive than input processing. It is not presented here as a universal physical constant or as a direct measurement result, but as a transparent modeling assumption for the current release. The project reference scenario is:
+with $\omega = 1.8$ in the current release. This value is used as an internal screening prior: its role is to reflect, in a simple and auditable way, that autoregressive output generation is typically more compute-intensive than input processing, consistently with the distinction between prefill and decode phases discussed in the LLM inference literature \cite{zhou2024survey}. It is not presented here as a universal physical constant or as a direct measurement result, but as a transparent modeling assumption for the current release. The project reference scenario is:
 \begin{equation}
 V_{ref} = 1000 + 1.8 \times 550 = 1990.
 \end{equation}
@@ -104,7 +104,7 @@ The training proxy starts from literature anchors that directly report training 
 \times \left(\frac{Tok_t}{Tok_a}\right)^{\beta_s}
 \times F^{reg}_{t,s} \times F^{arch-tr}_{t,s} \times F^{hw}_{t,s},
 \end{equation}
-where $P_t$ is the retained parameter count, $Tok_t$ is a training-token prior, $F^{reg}$ is a training-regime prior, $F^{arch-tr}$ captures architecture and multimodality assumptions, and $F^{hw}$ is a hardware-class proxy. The value of 20 training tokens per retained parameter is currently used as a project screening prior when no model-specific public estimate is available. It should be read as a pragmatic default assumption, not as a direct measurement. The current release also defaults market models to a foundation-pretraining regime unless a narrower public indication exists.
+where $P_t$ is the retained parameter count, $Tok_t$ is a training-token prior, $F^{reg}$ is a training-regime prior, $F^{arch-tr}$ captures architecture and multimodality assumptions, and $F^{hw}$ is a hardware-class proxy. The value of 20 training tokens per retained parameter is currently used as a project screening prior when no model-specific public estimate is available. It should be read as a pragmatic default assumption, not as a direct measurement. This default is broadly consistent with the order of magnitude popularized by compute-optimal training analyses such as Chinchilla \cite{hoffmann2022chinchilla}. The current release also defaults market models to a foundation-pretraining regime unless a narrower public indication exists.
 
 This second proxy is not used in the application estimator shown to users, which remains inference-only. It is used in the observatory and the comparative tables to avoid suggesting that training impacts can be projected from parameter count alone. The result should still be read as a screening order of magnitude rather than as an audited declaration of model-development impact.
 
