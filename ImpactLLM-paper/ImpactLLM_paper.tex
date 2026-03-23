@@ -73,7 +73,7 @@ Formally, let $E_a = 0.24$ Wh be the anchor value and $P_a = 180$ the active-par
 \begin{equation}
 V_t = T_{in} + \omega T_{out},
 \end{equation}
-with $\omega = 1.8$ in the current release. The project reference scenario is:
+with $\omega = 1.8$ in the current release. This value is used as an internal screening prior: its role is to reflect, in a simple and auditable way, that autoregressive output generation is typically more compute-intensive than input processing. It is not presented here as a universal physical constant or as a direct measurement result, but as a transparent modeling assumption for the current release. The project reference scenario is:
 \begin{equation}
 V_{ref} = 1000 + 1.8 \times 550 = 1990.
 \end{equation}
