@@ -126,6 +126,12 @@ def classify_market_parameter_source(row):
             "The retained parameter value is a catalog-level partial-data prior derived from source-linked donor models sharing documented metadata.",
         )
 
+    if source.startswith("Not quantified: no comparable source-linked donor"):
+        return (
+            "insufficient_comparable_donor",
+            "No source-linked donor model matches this model's retained family, size, and serving tier closely enough for a quantitative prior.",
+        )
+
     if model_id == "grok-1":
         return (
             "derivable_from_cited_source",
@@ -239,13 +245,22 @@ def _family_label(row):
     model_id = _normalize_text(row.get("model_id"))
     series = _series_label(row)
 
+    if series == "gpt" and model_id.startswith((
+        "gpt-6-luna",
+        "gpt-6.1-terra",
+        "gpt-5-mini",
+        "gpt-5-nano",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+    )):
+        return "gpt_efficient"
     if _has_phrase(text, "flash lite") or _has_phrase(text, "tts"):
         return "flash_lite"
     if _has_phrase(text, "haiku"):
         return "haiku"
     if _has_phrase(text, "sonnet"):
         return "sonnet"
-    if _has_phrase(text, "opus") or _has_phrase(text, "mythos"):
+    if _has_phrase(text, "opus") or _has_phrase(text, "mythos") or _has_phrase(text, "fable"):
         return "opus"
     if _has_phrase(text, "4o mini"):
         return "mini"
@@ -257,6 +272,14 @@ def _family_label(row):
         return "reasoning"
     if model_id.startswith("gpt-4o") or _has_phrase(text, "gpt 4o"):
         return "4o"
+    if model_id in {"gemini-4-argon", "gemini-4-carbon"}:
+        return "pro"
+    if model_id == "gemini-4-hydrogen":
+        return "flash"
+    if series == "gpt" and model_id.startswith(("gpt-6-astra", "gpt-6.1-sol")):
+        return "gpt_frontier"
+    if series == "gpt" and model_id.startswith(("gpt-4", "gpt-5", "gpt-6")):
+        return "gpt_frontier"
     if "grok 4" in text or model_id.startswith("grok-4"):
         return "grok4"
     if "grok 1.5" in text or model_id.startswith("grok-1.5"):
@@ -281,8 +304,10 @@ def _size_tier(row):
         return "small"
     if family in {"flash", "sonnet"} or _has_phrase(source, "medium size") or _has_phrase(source, "mid size") or _has_phrase(source, "fast model"):
         return "mid"
-    if family in {"pro", "opus", "reasoning", "large", "grok4", "4o"}:
+    if family in {"pro", "opus", "reasoning", "large", "grok4", "4o", "gpt_frontier"}:
         return "frontier"
+    if family == "gpt_efficient":
+        return "mid"
     if "frontier" in source:
         return "frontier"
     if series == "gpt" and model_id.startswith("gpt-4o"):
@@ -380,6 +405,17 @@ def _sort_donors(target_sig, candidates):
     )
 
 
+def _prefer_matching_serving_mode(target_row, candidates):
+    target_mode = _normalize_text(target_row.get("serving_mode"))
+    if not target_mode:
+        return candidates
+    matching = [
+        row for row in candidates
+        if _normalize_text(row.get("serving_mode")) == target_mode
+    ]
+    return matching or candidates
+
+
 def _candidate_strict_rows(target_row, strict_rows):
     target_date = _parse_release_date(target_row.get("release_date"))
     if not target_date:
@@ -424,6 +460,7 @@ def _pick_partial_donors(target_row, strict_rows):
         and family
         and row["__partial_signature"]["family"] == family
     ]
+    same_provider_family = _prefer_matching_serving_mode(target_row, same_provider_family)
     if same_provider_family:
         ordered = _sort_donors(target_sig, same_provider_family)
         return ordered[:3], "same_provider_family"
@@ -434,24 +471,30 @@ def _pick_partial_donors(target_row, strict_rows):
         if row["__partial_signature"]["provider"] == provider
         and row["__partial_signature"]["size_tier"] == size_tier
     ]
+    same_provider_tier = _prefer_matching_serving_mode(target_row, same_provider_tier)
+    same_provider_any = [
+        row
+        for row in candidate_rows
+        if row["__partial_signature"]["provider"] == provider
+    ]
+    same_provider_any = _prefer_matching_serving_mode(target_row, same_provider_any)
     if len(same_provider_tier) >= 2:
         ordered = _sort_donors(target_sig, same_provider_tier)
         return ordered[:3], "same_provider_size_tier"
     if len(same_provider_tier) == 1:
+        if provider_required:
+            ordered = _sort_donors(target_sig, same_provider_tier)
+            return ordered, "same_provider_size_tier"
         global_same_tier = [
             row
             for row in candidate_rows
             if row["__partial_signature"]["size_tier"] == size_tier
             and row["model_id"] != same_provider_tier[0]["model_id"]
         ]
+        global_same_tier = _prefer_matching_serving_mode(target_row, global_same_tier)
         ordered = same_provider_tier + _sort_donors(target_sig, global_same_tier)[:2]
         return ordered[:3], "provider_tier_plus_global_tier"
 
-    same_provider_any = [
-        row
-        for row in candidate_rows
-        if row["__partial_signature"]["provider"] == provider
-    ]
     if provider_required:
         if same_provider_any:
             ordered = _sort_donors(target_sig, same_provider_any)
@@ -463,6 +506,7 @@ def _pick_partial_donors(target_row, strict_rows):
         for row in candidate_rows
         if family and row["__partial_signature"]["family"] == family
     ]
+    global_same_family = _prefer_matching_serving_mode(target_row, global_same_family)
     if global_same_family:
         ordered = _sort_donors(target_sig, global_same_family)
         return ordered[:3], "global_family"
@@ -472,9 +516,13 @@ def _pick_partial_donors(target_row, strict_rows):
         for row in candidate_rows
         if row["__partial_signature"]["size_tier"] == size_tier
     ]
+    global_same_tier = _prefer_matching_serving_mode(target_row, global_same_tier)
     if global_same_tier:
         ordered = _sort_donors(target_sig, global_same_tier)
         return ordered[:3], "global_size_tier"
+
+    if size_tier in {"compact", "small"}:
+        return [], "insufficient_comparable_donor"
 
     if same_provider_any:
         ordered = _sort_donors(target_sig, same_provider_any)
@@ -483,6 +531,7 @@ def _pick_partial_donors(target_row, strict_rows):
     if provider_required:
         return [], "insufficient_provider_link"
 
+    candidate_rows = _prefer_matching_serving_mode(target_row, candidate_rows)
     ordered = _sort_donors(target_sig, candidate_rows)
     return ordered[:3], "global_fallback"
 
@@ -606,6 +655,18 @@ def annotate_market_catalog(rows):
             continue
         prior = derive_partial_parameter_prior(row, strict_rows)
         if not prior:
+            exclusion_reason = (
+                "No source-linked donor model matches this model's retained family, size, and serving tier closely enough for a quantitative prior."
+            )
+            row["parameter_source_audit"] = "insufficient_comparable_donor"
+            row["parameter_source_audit_note"] = exclusion_reason
+            row["parameter_source"] = "Not quantified: no comparable source-linked donor"
+            row["parameter_source_url"] = ""
+            row["parameter_value_status"] = "unavailable"
+            row["parameter_confidence"] = "low"
+            row["active_parameters_billion"] = ""
+            row["total_parameters_billion"] = ""
+            row["benchmark_exclusion_reason"] = exclusion_reason
             continue
         row["parameter_source"] = prior["parameter_source"]
         row["parameter_source_url"] = prior["parameter_source_url"]

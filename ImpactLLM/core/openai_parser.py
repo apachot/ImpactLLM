@@ -13,8 +13,8 @@ ENV_CANDIDATES = [
     ROOT / ".env",
     ROOT / "web" / ".env",
 ]
-DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
-DEFAULT_MODERATION_MODEL = "gpt-4o-mini"
+DEFAULT_OPENAI_MODEL = "gpt-6.1-terra"
+DEFAULT_MODERATION_MODEL = "gpt-6-luna"
 
 
 class OpenAIParserError(RuntimeError):
@@ -152,11 +152,17 @@ def openai_chat_text(settings, messages, error_cls, model=None):
 
 
 def do_openai_request(settings, messages, response_format=None, model=None):
+    selected_model = model or settings["model"]
     payload = {
-        "model": model or settings["model"],
-        "temperature": 0,
+        "model": selected_model,
         "messages": messages,
     }
+    if selected_model.startswith("gpt-6"):
+        # GPT-6 reasoning models reject temperature when reasoning is enabled.
+        # Parsing is a constrained extraction task, so explicitly disable it.
+        payload["reasoning_effort"] = "none"
+    else:
+        payload["temperature"] = 0
     if response_format is not None:
         payload["response_format"] = response_format
 

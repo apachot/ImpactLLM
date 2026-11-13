@@ -53,6 +53,10 @@ LOGO_PATH = ROOT / "web" / "impactllm-logo.svg"
 LOGO_MARK_PATH = ROOT / "web" / "impactllm-mark.svg"
 REFERENCE_PAGE_TOKENS = 750.0
 DEFAULT_PROMPT_TOKENS = 1550.0
+# Temporary safeguard: the application-description flow invokes OpenAI for
+# moderation and structured parsing. Keep it off until the homepage estimator
+# is ready to be re-enabled.
+APPLICATION_ESTIMATOR_ENABLED = False
 COMPRESSIBLE_CONTENT_TYPES = (
     "text/",
     "application/json",
@@ -62,12 +66,12 @@ COMPRESSIBLE_CONTENT_TYPES = (
 )
 COMPRESSIBLE_MIN_BYTES = 1024
 PROJECT_PAPER_BIBTEX = """@misc{impactllm_screening_2026,
-  title = {Transparent Screening for LLM Inference and Training Impacts},
+  title = {ImpactLLM: An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models},
   author = {Pachot, Arnault and Petit, Thierry},
   year = {2026},
-  month = mar,
-  note = {Conference paper preprint},
-  url = {https://dev.emotia.com/impact-llm/downloads/ImpactLLM_paper.pdf}
+  month = nov,
+  note = {Version dated November 13, 2026},
+  url = {https://impactllm.eu/downloads/ImpactLLM_paper.pdf}
 }"""
 
 
@@ -90,14 +94,17 @@ def first_existing_path(*paths):
 
 
 BIB_PATH = first_existing_path(
+    ROOT / "docs" / "references_llm_environment_opendata.bib",
     ROOT.parent / "ImpactLLM-paper" / "references_ImpactLLM.bib",
     ROOT.parent / "llm-environment-opendata-paper" / "references_llm_environment_opendata.bib",
 )
 PAPER_TEX_PATH = first_existing_path(
+    ROOT / "docs" / "llm_environment_opendata_paper.tex",
     ROOT.parent / "ImpactLLM-paper" / "ImpactLLM_paper.tex",
     ROOT.parent / "llm-environment-opendata-paper" / "llm_environment_opendata_paper.tex",
 )
 PAPER_PDF_PATH = first_existing_path(
+    ROOT / "docs" / "llm_environment_opendata_paper.pdf",
     ROOT.parent / "ImpactLLM-paper" / "ImpactLLM_paper.pdf",
     ROOT.parent / "llm-environment-opendata-paper" / "llm_environment_opendata_paper.pdf",
 )
@@ -1955,6 +1962,37 @@ def render_bibliography_tab():
         """
         for entry in factor_source_entries
     )
+    release_sources = {}
+    models_without_release_source = 0
+    for row in market_model_rows:
+        citation = str(row.get("release_source", "") or "").strip()
+        url = str(row.get("release_source_url", "") or "").strip()
+        if not citation or not url:
+            models_without_release_source += 1
+            continue
+        key = (str(row.get("release_date", "") or ""), citation, url)
+        release_sources.setdefault(
+            key,
+            {"models": [], "provider": str(row.get("provider", "") or "")},
+        )["models"].append(str(row.get("display_name", "") or row.get("model_id", "")))
+    model_release_source_rows = "".join(
+        f"""
+        <tr>
+          <td>{escape(release_date or 'n.d.')}</td>
+          <td>{escape(', '.join(sorted(source['models'])))}</td>
+          <td>{escape(source['provider'] or 'n.d.')}</td>
+          <td><a href="{escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">{escape(citation)}</a></td>
+        </tr>
+        """
+        for (release_date, citation, url), source in sorted(
+            release_sources.items(), key=lambda item: (item[0][0], item[0][1]), reverse=True
+        )
+    )
+    missing_release_source_note = (
+        f" {models_without_release_source} older catalog models do not yet have a dedicated release source recorded."
+        if models_without_release_source
+        else ""
+    )
     tracked_bibliography_block = ""
     if tracked_rows:
         tracked_bibliography_block = f"""
@@ -2090,6 +2128,26 @@ def render_bibliography_tab():
           <ol class="analysis-bibliography-list">
             {factor_source_rows}
           </ol>
+        </div>
+
+        <div class="reference-subtable">
+          <h4>Official market-model release sources</h4>
+          <div class="reference-copy-block">
+            <p class="summary-intro">This list links the model release or official model documentation used to identify each quantified catalog model. It is separate from the scientific literature used to calibrate and interpret the project’s screening methods.{missing_release_source_note}</p>
+          </div>
+          <div class="reference-table-wrap">
+            <table class="reference-table">
+              <thead>
+                <tr>
+                  <th>Release date</th>
+                  <th>Model(s)</th>
+                  <th>Provider</th>
+                  <th>Official source</th>
+                </tr>
+              </thead>
+              <tbody>{model_release_source_rows}</tbody>
+            </table>
+          </div>
         </div>
 
         <div class="reference-subtable">
@@ -2246,7 +2304,8 @@ def render_documentation_tab():
 ImpactLLM/web/.env</code></pre>
           <p>Minimum configuration:</p>
           <pre style="margin:0; white-space:pre-wrap;"><code>OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4.1-mini</code></pre>
+OPENAI_MODEL=gpt-6.1-terra
+OPENAI_MODERATION_MODEL=gpt-6-luna</code></pre>
         </div>
       </section>
 
@@ -2381,10 +2440,13 @@ python3 scripts/export_json.py</code></pre>
             <h3>LaTeX compilation</h3>
           </div>
         </div>
-        <p class="summary-intro">The associated scientific paper is maintained in the neighboring <code>ImpactLLM-paper</code> folder. PDF generation requires a LaTeX installation providing <code>pdflatex</code>.</p>
+        <p class="summary-intro">The associated scientific paper and bibliography are maintained in <code>docs/</code>. Compile the source with <code>pdflatex</code> and <code>bibtex</code> to regenerate the downloadable PDF.</p>
         <div class="summary-body">
-          <pre style="margin:0; white-space:pre-wrap;"><code>cd "../ImpactLLM-paper"
-pdflatex -interaction=nonstopmode -halt-on-error ImpactLLM_paper.tex</code></pre>
+          <pre style="margin:0; white-space:pre-wrap;"><code>cd docs
+pdflatex -interaction=nonstopmode -halt-on-error llm_environment_opendata_paper.tex
+bibtex llm_environment_opendata_paper
+pdflatex -interaction=nonstopmode -halt-on-error llm_environment_opendata_paper.tex
+pdflatex -interaction=nonstopmode -halt-on-error llm_environment_opendata_paper.tex</code></pre>
         </div>
       </section>
 
@@ -2776,6 +2838,10 @@ def render_market_models_charts(records):
         <button type="button" class="chart-tab-button is-active" data-model-chart-control="metric-tab" data-metric-value="energy" aria-selected="true">Energy</button>
         <button type="button" class="chart-tab-button" data-model-chart-control="metric-tab" data-metric-value="carbon" aria-selected="false">Carbon</button>
       </div>
+      <div class="table-toolbar">
+        <label class="table-search-label" for="models-chart-search">Find a model in this chart</label>
+        <input id="models-chart-search" class="table-search-input" type="search" placeholder="GPT-6, Claude, Gemini…" autocomplete="off">
+      </div>
       <div class="scenario-callout" data-i18n-html="inference-scenario-banner"><span class="scenario-callout-label">Retained inference scenario</span><strong class="scenario-callout-value">1 hour of active use</strong></div>
       <div id="models-impact-chart" class="models-impact-chart" data-chart-rows='{escape(json.dumps(view["chart_rows"], ensure_ascii=False), quote=True)}'></div>
       <p class="summary-intro models-chart-note">The chart below shows the estimated central values for the <strong>{view["benchmark_count"]} quantified catalog models</strong> under a standardized inference scenario corresponding to <strong>1 hour of active use</strong>: <strong>{view["requests_per_hour"]} interactions/hour</strong>, <strong>1000 input tokens</strong>, <strong>550 output tokens</strong>, and one LLM request per use. The hourly pace is derived from an average reading speed of <strong>{view["reading_wpm"]} words/min</strong> (<a href="https://www.sciencedirect.com/science/article/pii/S0749596X19300786" target="_blank" rel="noopener noreferrer">Brysbaert, 2019</a>) and a project convention of <strong>1 token ≈ {view["words_per_token"]} word</strong>.</p>
@@ -2870,7 +2936,7 @@ def render_market_models_charts(records):
           <h3>Inference carbon by model release date</h3>
         </div>
       </div>
-      <p class="summary-intro">This timeline follows the evolution of the project’s central inference CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.</p>
+      <p class="summary-intro">This timeline follows the evolution of the project’s central inference CO2e estimate for the market-model families represented in the catalog, using each model’s release month as the horizontal axis.</p>
       <div id="inference-release-timeline-chart" class="models-impact-chart" data-release-timeline-rows='{escape(json.dumps(view["release_timeline_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     <section class="panel reference-panel">
@@ -3371,6 +3437,10 @@ def render_training_models_charts(records):
         <button type="button" class="chart-tab-button is-active" data-training-chart-control="metric-tab" data-metric-value="direct_training_energy" aria-selected="true">Energy</button>
         <button type="button" class="chart-tab-button" data-training-chart-control="metric-tab" data-metric-value="direct_training_carbon" aria-selected="false">Carbon</button>
       </div>
+      <div class="table-toolbar">
+        <label class="table-search-label" for="training-chart-search">Find a model in this chart</label>
+        <input id="training-chart-search" class="table-search-input" type="search" placeholder="GPT-6, Claude, Gemini…" autocomplete="off">
+      </div>
       <div id="training-impact-chart" class="models-impact-chart" data-training-chart-rows='{escape(json.dumps(view["chart_rows"], ensure_ascii=False), quote=True)}'></div>
       <p class="summary-intro models-benchmark-note">Benchmarks integrated into the chart: household electricity for <strong>{benchmark_households:,.0f}</strong> households over one year of domestic use, i.e. ≈ <strong>{benchmark_energy_twh:.2f} TWh</strong> based on an average consumption of 2,500 kWh per household (RTE, 2021 estimate), and full-flight aviation derived from Klöwer et al. (2025) from 577.97 MtCO2 and 27.45 million commercial flights observed in 2023, i.e. ≈ <strong>{benchmark_carbon_tco2e:,.1f} tCO2e</strong> for <strong>{benchmark_flights:,.0f} full flights</strong>. These comparison points are aligned with the current maximum central screening order of magnitude in the training chart, not with a direct provider-side measurement.</p>
     </section>
@@ -3421,7 +3491,7 @@ def render_training_models_charts(records):
           <h3>Training CO2e by model release date</h3>
         </div>
       </div>
-      <p class="summary-intro">This timeline follows the evolution of the project’s retained training CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.</p>
+      <p class="summary-intro">This timeline follows the evolution of the project’s retained training CO2e estimate for the market-model families represented in the catalog, using each model’s release month as the horizontal axis.</p>
       <div id="training-release-timeline-chart" class="models-impact-chart" data-training-release-timeline-rows='{escape(json.dumps(view["release_timeline_rows"], ensure_ascii=False), quote=True)}'></div>
     </section>
     <section class="panel reference-panel">
@@ -3686,14 +3756,14 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
 
           <p><strong>Technical paper</strong></p>
           <div class="paper-preview-grid">
-            <a class="paper-preview-card" href="{app_url('/downloads/ImpactLLM_paper.pdf')}" target="_blank" rel="noopener noreferrer" aria-label="Open the Transparent Screening paper PDF">
+            <a class="paper-preview-card" href="{app_url('/downloads/ImpactLLM_paper.pdf')}" target="_blank" rel="noopener noreferrer" aria-label="Open the ImpactLLM scientific paper PDF">
               <span class="paper-preview-frame">
-                <img src="{app_url('/downloads/ImpactLLM_paper_preview.png')}" alt="Preview of the first page of Transparent Screening for LLM Inference and Training Impacts" loading="lazy">
+                <img src="{app_url('/downloads/ImpactLLM_paper_preview.png')}" alt="Preview of the first page of the ImpactLLM scientific paper" loading="lazy">
               </span>
               <span class="paper-preview-caption">Technical paper PDF</span>
             </a>
           </div>
-          <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em>Transparent Screening for LLM Inference and Training Impacts.</em> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">{app_url('/downloads/ImpactLLM_paper.pdf')}</a></p>
+          <p class="paper-preview-reference notranslate">Pachot, A., &amp; Petit, T. (2026, November 13). <em>ImpactLLM: An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models.</em> <a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">{app_url('/downloads/ImpactLLM_paper.pdf')}</a></p>
         </div>
       </section>
     </section>
@@ -3704,7 +3774,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         <div class="summary-body">
           <p>We work on responsible AI with a focus on methodological rigor, traceability, and real-world decision support. Our work combines scientific research, product design, and operational deployment to make AI systems more transparent, more accountable, and more useful in practice.</p>
           <p><strong>How to cite ImpactLLM</strong></p>
-          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, March 14). <em><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Transparent Screening for LLM Inference and Training Impacts.</a></em></p>
+          <p class="notranslate">Pachot, A., &amp; Petit, T. (2026, November 13). <em><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">ImpactLLM: An Open Tool for Exploring and Estimating the Environmental Footprint of Large Language Models.</a></em></p>
           <p><strong>BibTeX</strong></p>
           <pre class="citation-block"><code>{escape(PROJECT_PAPER_BIBTEX)}</code></pre>
           <p><a href="{app_url('/downloads/ImpactLLM_paper.pdf')}">Download technical paper PDF</a> | <a href="{app_url('/downloads/ImpactLLM_paper.bib')}">Download technical paper BibTeX</a></p>
@@ -3786,11 +3856,8 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         </section>
         """
 
-    home_tab = f"""
-    <section class="tab-panel is-active" id="tab-home-panel" data-tab-panel="home">
-      <header class="hero">
-        <h1>An Open Tool for Estimating the Environmental Footprint of LLMs</h1>
-      </header>
+    if APPLICATION_ESTIMATOR_ENABLED:
+        estimator_panel = f"""
       <form class="panel" method="post" action="{app_url('/')}" id="estimate-form">
         <label for="description">Describe your application in natural language to obtain an inference estimate, its assumptions, and its source-linked calculation details.</label>
         <textarea id="description" name="description" placeholder="Describe your AI-enabled application in natural language...">{escape(description)}</textarea>
@@ -3806,6 +3873,20 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           <button type="button" class="example-prompt" data-example-prompt="We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.">We have a RAG assistant based on Mistral Large, with a vector database and logging, used by about 800 employees and handling roughly 25,000 requests per month. If you know them, you can also add token volumes or request counts.</button>
         </div>
       </form>
+        """
+    else:
+        estimator_panel = """
+      <section class="panel">
+        <p class="lead">The application estimator is temporarily unavailable.</p>
+      </section>
+        """
+
+    home_tab = f"""
+    <section class="tab-panel is-active" id="tab-home-panel" data-tab-panel="home">
+      <header class="hero">
+        <h1>An Open Tool for Estimating the Environmental Footprint of LLMs</h1>
+      </header>
+      {estimator_panel}
       <div id="results-anchor">
         {result_methods_block}
         {error_block}
@@ -5211,6 +5292,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const searchInputs = Array.from(document.querySelectorAll('[data-table-search]'));
     const sortButtons = Array.from(document.querySelectorAll('[data-sort-table]'));
     const modelsChart = document.getElementById('models-impact-chart');
+    const modelsChartFilter = document.getElementById('models-chart-search');
     const paramsChart = document.getElementById('params-impact-chart');
     const scatterChart = document.getElementById('carbon-params-scatter-chart');
     const inferenceBubbleChart = document.getElementById('inference-bubble-chart');
@@ -5226,6 +5308,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     const inferenceUncertaintyControls = Array.from(document.querySelectorAll('[data-inference-uncertainty-control="metric-tab"]'));
     const crossImpactControls = Array.from(document.querySelectorAll('[data-cross-impact-control="metric-tab"]'));
     const trainingChart = document.getElementById('training-impact-chart');
+    const trainingChartFilter = document.getElementById('training-chart-search');
     const trainingScatterChart = document.getElementById('training-carbon-params-scatter-chart');
     const trainingFactorHeatmap = document.getElementById('training-factor-heatmap');
     const trainingUncertaintyChart = document.getElementById('training-uncertainty-chart');
@@ -5277,9 +5360,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         inferenceScenarioBanner: '<span class="scenario-callout-label">Retained inference scenario</span><strong class="scenario-callout-value">1 hour of active use</strong>',
         comparisonEstimatedPrefix: 'Comparison of estimated central values over 1 hour of active use for the ',
         comparisonEstimatedMiddle: ' indicator, using the ',
-        comparisonEstimatedSuffix: ' family.',
+        comparisonEstimatedSuffix: ' family, ranked from highest to lowest value.',
         comparisonTrainingPrefix: 'Comparison of extrapolated central values for the ',
-        comparisonTrainingSuffix: ' indicator.',
+        comparisonTrainingSuffix: ' indicator, ranked from highest to lowest value.',
         modelsAriaLabel: 'Comparative chart of models',
         trainingAriaLabel: 'Comparative chart of training impacts',
         methodAnchorBody: 'The application-level estimator starts from published inference indicators linked to an explicit source, model, geography, and system boundary. In the current market-model release, the predictive core uses Elsworth et al. (2025) as the main prompt-level calibration anchor, with a median prompt energy of <code>0.24 Wh/prompt</code> for Gemini Apps, and is interpreted alongside other inference references such as the <em>ML.ENERGY Benchmark</em>, Ren et al. (2024), and Li et al. (2025).',
@@ -5312,9 +5395,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         inferenceScenarioBanner: '<span class="scenario-callout-label">Scénario d’inférence retenu</span><strong class="scenario-callout-value">1 heure d’utilisation active</strong>',
         comparisonEstimatedPrefix: 'Comparaison des valeurs centrales estimées sur 1 heure d’utilisation active pour l’indicateur ',
         comparisonEstimatedMiddle: ', selon la famille ',
-        comparisonEstimatedSuffix: '.',
+        comparisonEstimatedSuffix: ' (classé de la valeur la plus élevée à la plus faible).',
         comparisonTrainingPrefix: 'Comparaison des valeurs centrales extrapolées pour l’indicateur ',
-        comparisonTrainingSuffix: '.',
+        comparisonTrainingSuffix: ' (classé de la valeur la plus élevée à la plus faible).',
         modelsAriaLabel: 'Graphique comparatif des modèles',
         trainingAriaLabel: 'Graphique comparatif des impacts d’entraînement',
         methodAnchorBody: 'L’estimateur au niveau applicatif part d’indicateurs d’inférence publiés, reliés à une source, un modèle, une géographie et un périmètre système explicites. Dans la version actuelle pour les modèles du marché, le cœur prédictif utilise Elsworth et al. (2025) comme ancrage principal de calibration au niveau prompt, avec une énergie médiane de <code>0.24 Wh/prompt</code> pour Gemini Apps, et se lit aux côtés d’autres références d’inférence comme le <em>ML.ENERGY Benchmark</em>, Ren et al. (2024) et Li et al. (2025).',
@@ -5331,6 +5414,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
     }};
     const textReplacements = [
       ['Home', 'Accueil'],
+      ['Find a model in this chart', 'Rechercher un modèle dans ce graphique'],
       ['Observatory', 'Observatoire'],
       ['Referential', 'Référentiel'],
       ['Method', 'Méthode'],
@@ -5473,11 +5557,11 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       ['This heatmap exposes the central screening factors retained for each market model in the training proxy. It shows the regime, architecture, and hardware factors together with the retained training-token ratio per parameter.', 'Cette heatmap rend visibles les facteurs centraux de screening retenus pour chaque modèle du marché dans le proxy d’entraînement. Elle montre les facteurs de régime, d’architecture et de matériel, ainsi que le ratio retenu de tokens d’entraînement par paramètre.'],
       ['This view shows the low, central, and high training CO2e values retained by the project for each market model, contextualized from retained training energy and the model country proxy. It makes explicit how widely the training proxy can vary once the parameter and token exponents and contextual factors are widened.', 'Cette vue montre, pour chaque modèle du marché, les valeurs basse, centrale et haute de CO2e d’entraînement retenues par le projet, contextualisées à partir de l’énergie d’entraînement retenue et du proxy pays du modèle. Elle rend explicite l’ampleur de variation possible du proxy d’entraînement lorsque les exposants sur les paramètres et les tokens, ainsi que les facteurs contextuels, sont élargis.'],
       ['This complementary view places models by retained active parameter count on the horizontal axis and by central inference carbon over one hour on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres actifs retenus sur l’axe horizontal et leur carbone central d’inférence sur une heure sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
-      ['This timeline follows the evolution of the project’s central inference CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.', 'Cette chronologie suit l’évolution dans le temps de l’estimation centrale du CO2e d’inférence du projet pour les familles OpenAI, Claude, Grok et Mistral, en utilisant le mois de sortie de chaque modèle comme axe horizontal.'],
+      ['This timeline follows the evolution of the project’s central inference CO2e estimate for the market-model families represented in the catalog, using each model’s release month as the horizontal axis.', 'Cette chronologie suit l’évolution de l’estimation centrale du CO2e d’inférence pour les familles de modèles présentes dans le catalogue, en utilisant le mois de sortie de chaque modèle comme axe horizontal.'],
       ['This view compares central inference energy and carbon over one hour, while coloring each model by the retained electricity-mix country used for carbon recalculation. It helps separate model-size effects from country-mix effects.', 'Cette vue compare l’énergie et le carbone centraux d’inférence sur une heure, en colorant chaque modèle selon le pays de mix électrique retenu pour le recalcul du carbone. Elle aide à distinguer les effets de taille de modèle des effets de mix pays.'],
       ['This landscape view clusters the catalog models from the characteristics retained by the project for training screening: retained parameter count, training-token prior, training regime, hardware-class proxy, modality support, architecture notes, and central training energy and carbon outputs. Nearby points indicate similar retained screening profiles rather than a direct ranking on one axis.', 'Cette vue de paysage regroupe les modèles du catalogue à partir des caractéristiques retenues par le projet pour le screening en entraînement : nombre de paramètres retenu, prior sur les tokens d’entraînement, régime d’entraînement, proxy de classe matérielle, support multimodal, notes d’architecture, ainsi que sorties centrales d’énergie et de carbone d’entraînement. Des points proches indiquent des profils de screening retenus similaires plutôt qu’un classement direct sur un seul axe.'],
       ['This complementary view places models by retained parameter count on the horizontal axis and by training CO2e contextualized from retained training energy on the vertical axis, using logarithmic scaling on both axes.', 'Cette vue complémentaire positionne les modèles selon leur nombre de paramètres retenu sur l’axe horizontal et leur CO2e d’entraînement contextualisé à partir de l’énergie d’entraînement retenue sur l’axe vertical, avec une échelle logarithmique sur les deux axes.'],
-      ['This timeline follows the evolution of the project’s retained training CO2e estimate over time for the OpenAI, Claude, Grok, and Mistral families, using the release month of each model as the horizontal axis.', 'Cette chronologie suit l’évolution dans le temps de l’estimation retenue du CO2e d’entraînement du projet pour les familles OpenAI, Claude, Grok et Mistral, en utilisant le mois de sortie de chaque modèle comme axe horizontal.'],
+      ['This timeline follows the evolution of the project’s retained training CO2e estimate for the market-model families represented in the catalog, using each model’s release month as the horizontal axis.', 'Cette chronologie suit l’évolution de l’estimation retenue du CO2e d’entraînement pour les familles de modèles présentes dans le catalogue, en utilisant le mois de sortie de chaque modèle comme axe horizontal.'],
       ['3. Carbon derivation from the country mix', '3. Dérivation du carbone à partir du mix pays'],
       ['Carbon is not reused directly from the literature. It is derived from extrapolated energy using the retained country electricity mix, here', 'Le carbone n’est pas réutilisé directement depuis la littérature. Il est dérivé de l’énergie extrapolée à partir du mix électrique du pays retenu, ici'],
       ['The unit result retained for this method then leads to the following annualized values: energy', 'Le résultat unitaire retenu pour cette méthode conduit ensuite aux valeurs annualisées suivantes : énergie'],
@@ -5956,12 +6040,13 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }}
       return String(value);
     }};
-    const buildChartMarkup = (rows, metric, family) => {{
+    const buildChartMarkup = (rows, metric, family, searchQuery = '') => {{
       const locale = uiText[currentLanguage.value];
       if (!rows.length) {{
         return `<p class="lead">${{locale.noData}}</p>`;
       }}
       const key = `${{family}}_${{metric}}_${{metric === 'energy' ? 'wh' : metric === 'carbon' ? 'gco2e' : 'ml'}}`;
+      const normalizedQuery = String(searchQuery || '').trim().toLocaleLowerCase();
       const sorted = rows
         .map((row) => ({{
           label: translateBenchmarkLabel(row.label, currentLanguage.value),
@@ -5969,12 +6054,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           value: Number(row[key] || 0),
           kind: row.kind || 'model',
         }}))
-        .filter((row) => row.value > 0)
+        .filter((row) => row.value > 0 && (!normalizedQuery || row.label.toLocaleLowerCase().includes(normalizedQuery) || String(row.provider || '').toLocaleLowerCase().includes(normalizedQuery)))
         .sort((a, b) => b.value - a.value);
       if (!sorted.length) {{
         return `<p class="lead">${{locale.noUsableValue}}</p>`;
       }}
-      const maxValue = sorted[0].value || 1;
+      const maxValue = Math.max(...sorted.map((row) => row.value)) || 1;
       const barHeight = 28;
       const rowGap = 22;
       const chartWidth = 980;
@@ -6013,8 +6098,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }} catch (error) {{
         rows = [];
       }}
-      modelsChart.innerHTML = buildChartMarkup(rows, metric, family);
+      modelsChart.innerHTML = buildChartMarkup(rows, metric, family, modelsChartFilter?.value || '');
     }};
+    modelsChartFilter?.addEventListener('input', renderModelsChart);
     chartControls.forEach((control) => {{
       control.addEventListener('click', () => {{
         chartControls.forEach((item) => {{
@@ -6049,7 +6135,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       if (!sorted.length) {{
         return `<p class="lead">${{locale.noUsableValue}}</p>`;
       }}
-      const maxValue = sorted[0].value || 1;
+      const maxValue = Math.max(...sorted.map((row) => row.value)) || 1;
       const barHeight = 28;
       const rowGap = 22;
       const chartWidth = 980;
@@ -7312,16 +7398,23 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         container.innerHTML = `<p class="lead">${{locale.noUsableValue}}</p>`;
         return;
       }}
-      const providerOrder = ['openai', 'anthropic', 'xai', 'mistral'];
+      const providerOrder = ['openai', 'anthropic', 'google', 'xai', 'meta', 'mistral', 'alibaba', 'deepseek', 'ai21', 'deepmind', 'microsoft'];
       const palette = {{
-        openai: '#243b63',
-        anthropic: '#8c7a5b',
-        xai: '#b85c38',
-        mistral: '#3f5a49',
+        openai: '#0f766e',
+        anthropic: '#b45309',
+        google: '#2563eb',
+        xai: '#7c3aed',
+        meta: '#dc2626',
+        mistral: '#ea580c',
+        alibaba: '#0284c7',
+        deepseek: '#1d4ed8',
+        ai21: '#475569',
+        deepmind: '#1e40af',
+        microsoft: '#0ea5e9',
       }};
       const width = 980;
-      const height = 620;
-      const padding = {{ top: 24, right: 24, bottom: 86, left: 86 }};
+      const height = 700;
+      const padding = {{ top: 24, right: 24, bottom: 170, left: 86 }};
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
       const xMin = Math.min(...points.map((row) => row.date.getTime()));
@@ -7353,7 +7446,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         }});
         return `
           <line x1="${{x}}" y1="${{padding.top}}" x2="${{x}}" y2="${{padding.top + plotHeight}}" stroke="rgba(0,0,0,0.08)" />
-          <text x="${{x}}" y="${{height - 40}}" text-anchor="middle" font-size="12" fill="#6c757d">${{label}}</text>
+          <text x="${{x}}" y="${{padding.top + plotHeight + 18}}" text-anchor="middle" font-size="12" fill="#6c757d">${{label}}</text>
         `;
       }}).join('');
       const yTickValues = (() => {{
@@ -7391,7 +7484,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         `;
       }}).join('');
       const legend = byProvider.map(([provider], index) => `
-        <g transform="translate(${{padding.left + index * 150}}, ${{height - 20}})">
+        <g transform="translate(${{padding.left + (index % 4) * 214}}, ${{height - 82 + Math.floor(index / 4) * 20}})">
           <rect width="14" height="14" rx="3" fill="${{palette[provider] || '#495057'}}"></rect>
           <text x="20" y="11" font-size="12" fill="#495057">${{providerDisplayName(provider)}}</text>
         </g>
@@ -7406,7 +7499,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           ${{lines}}
           ${{dots}}
           ${{legend}}
-          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 52}}" text-anchor="middle" font-size="13" fill="#495057">${{config.xLabel[currentLanguage.value]}}</text>
+          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 130}}" text-anchor="middle" font-size="13" fill="#495057">${{config.xLabel[currentLanguage.value]}}</text>
           <text x="18" y="${{padding.top + plotHeight / 2}}" text-anchor="middle" font-size="13" fill="#495057" transform="rotate(-90 18 ${{padding.top + plotHeight / 2}})">${{config.yLabel[currentLanguage.value]}}</text>
         </svg>
       `;
@@ -7454,15 +7547,20 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         return 1 / slope;
       }};
       const doublingMonths = computeDoublingMonths(points);
-      const providerOrder = ['openai', 'anthropic', 'xai'];
+      const providerOrder = ['openai', 'anthropic', 'google', 'xai', 'meta', 'mistral', 'alibaba', 'deepseek'];
       const palette = {{
-        openai: '#243b63',
-        anthropic: '#8c7a5b',
-        xai: '#b85c38',
+        openai: '#0f766e',
+        anthropic: '#b45309',
+        google: '#2563eb',
+        xai: '#7c3aed',
+        meta: '#dc2626',
+        mistral: '#ea580c',
+        alibaba: '#0284c7',
+        deepseek: '#1d4ed8',
       }};
       const width = 980;
-      const height = 620;
-      const padding = {{ top: 24, right: 24, bottom: 86, left: 86 }};
+      const height = 700;
+      const padding = {{ top: 24, right: 24, bottom: 170, left: 86 }};
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
       const xMin = Math.min(...points.map((row) => row.date.getTime()));
@@ -7494,7 +7592,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         }});
         return `
           <line x1="${{x}}" y1="${{padding.top}}" x2="${{x}}" y2="${{padding.top + plotHeight}}" stroke="rgba(0,0,0,0.08)" />
-          <text x="${{x}}" y="${{height - 40}}" text-anchor="middle" font-size="12" fill="#6c757d">${{label}}</text>
+          <text x="${{x}}" y="${{padding.top + plotHeight + 18}}" text-anchor="middle" font-size="12" fill="#6c757d">${{label}}</text>
         `;
       }}).join('');
       const yTickValues = (() => {{
@@ -7532,7 +7630,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
         `;
       }}).join('');
       const legend = byProvider.map(([provider], index) => `
-        <g transform="translate(${{padding.left + index * 150}}, ${{height - 20}})">
+        <g transform="translate(${{padding.left + (index % 4) * 214}}, ${{height - 82 + Math.floor(index / 4) * 20}})">
           <rect width="14" height="14" rx="3" fill="${{palette[provider] || '#495057'}}"></rect>
           <text x="20" y="11" font-size="12" fill="#495057">${{providerDisplayName(provider)}}</text>
         </g>
@@ -7552,7 +7650,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           ${{lines}}
           ${{dots}}
           ${{legend}}
-          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 52}}" text-anchor="middle" font-size="13" fill="#495057">${{config.xLabel[currentLanguage.value]}}</text>
+          <text x="${{padding.left + plotWidth / 2}}" y="${{height - 130}}" text-anchor="middle" font-size="13" fill="#495057">${{config.xLabel[currentLanguage.value]}}</text>
           <text x="18" y="${{padding.top + plotHeight / 2}}" text-anchor="middle" font-size="13" fill="#495057" transform="rotate(-90 18 ${{padding.top + plotHeight / 2}})">${{config.yLabel[currentLanguage.value]}}</text>
           ${{doublingText ? `<text x="${{width - 24}}" y="20" text-anchor="end" font-size="12" fill="#6c757d">${{doublingText}}</text>` : ''}}
         </svg>
@@ -7579,12 +7677,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }},
     }});
     renderDoublingTimelineChart(inferenceDoublingTimelineChart, 'data-release-timeline-rows', {{
-      keepLabels: ['GPT-3.5 Turbo', 'GPT-4', 'GPT-5.2', 'GPT-5.4', 'GPT-5.5', 'Claude 2', 'Claude 3.5 Sonnet', 'Claude Sonnet 4', 'Claude Sonnet 4.6', 'Claude Opus 4.1', 'Claude Opus 4.7', 'Claude Mythos Preview', 'Grok 1', 'Grok 2', 'Grok 4', 'Grok 4.1 Fast', 'Grok 4.20', 'Grok 4.3'],
+      keepLabels: ['GPT-3.5 Turbo', 'GPT-4', 'GPT-5.2', 'GPT-5.4', 'GPT-5.5', 'GPT-6 Astra', 'GPT-6 Luna', 'GPT-6.1 Sol', 'GPT-6.1 Terra', 'Claude 2', 'Claude 3.5 Sonnet', 'Claude Sonnet 4', 'Claude Sonnet 4.6', 'Claude Opus 4.1', 'Claude Opus 4.7', 'Claude Opus 5.5', 'Claude Sonnet 5.5', 'Claude Haiku 5.5', 'Claude Fable 5.2', 'Claude Mythos 5.2', 'Gemini 4 Argon', 'Gemini 4 Carbon', 'Gemini 4 Hydrogen', 'Grok 1', 'Grok 2', 'Grok 4', 'Grok 4.1 Fast', 'Grok 4.20', 'Grok 4.3', 'Grok 4.7', 'Llama 4 Scout', 'Llama 4 Maverick', 'DeepSeek V4.1 Flash 1017', 'Mistral Large 4', 'Qwen3.8-Max'],
       valueKey: 'hour_carbon_gco2e',
       formatValue: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kg` : `${{value.toFixed(1)}} g`,
       intro: {{
-        en: 'Flagship GPT, Claude, and Grok models are isolated here to visualize the rate at which the current central inference-screening values appear to rise over time.',
-        fr: 'Les modèles phares GPT, Claude et Grok sont isolés ici pour visualiser la vitesse à laquelle les valeurs centrales actuelles de screening d’inférence semblent augmenter dans le temps.',
+        en: 'Recent flagship models from the OpenAI, Anthropic, Google, xAI, Meta, Mistral, DeepSeek, and Alibaba families are selected to show how the project’s central inference-screening values change over time.',
+        fr: 'Des modèles phares récents d’OpenAI, Anthropic, Google, xAI, Meta, Mistral, DeepSeek et Alibaba sont sélectionnés pour montrer l’évolution des valeurs centrales du screening d’inférence du projet.',
       }},
       xLabel: {{
         en: 'Model release month',
@@ -7741,12 +7839,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }},
     }});
     renderDoublingTimelineChart(trainingDoublingTimelineChart, 'data-training-release-timeline-rows', {{
-      keepLabels: ['GPT-3.5 Turbo', 'GPT-4', 'GPT-5.2', 'GPT-5.4', 'GPT-5.5', 'Claude 2', 'Claude 3.5 Sonnet', 'Claude Sonnet 4', 'Claude Sonnet 4.6', 'Claude Opus 4.1', 'Claude Opus 4.7', 'Claude Mythos Preview', 'Grok 1', 'Grok 2', 'Grok 4', 'Grok 4.1 Fast', 'Grok 4.20', 'Grok 4.3'],
+      keepLabels: ['GPT-3.5 Turbo', 'GPT-4', 'GPT-5.2', 'GPT-5.4', 'GPT-5.5', 'GPT-6 Astra', 'GPT-6 Luna', 'GPT-6.1 Sol', 'GPT-6.1 Terra', 'Claude 2', 'Claude 3.5 Sonnet', 'Claude Sonnet 4', 'Claude Sonnet 4.6', 'Claude Opus 4.1', 'Claude Opus 4.7', 'Claude Opus 5.5', 'Claude Sonnet 5.5', 'Claude Haiku 5.5', 'Claude Fable 5.2', 'Claude Mythos 5.2', 'Gemini 4 Argon', 'Gemini 4 Carbon', 'Gemini 4 Hydrogen', 'Grok 1', 'Grok 2', 'Grok 4', 'Grok 4.1 Fast', 'Grok 4.20', 'Grok 4.3', 'Grok 4.7', 'Llama 4 Scout', 'Llama 4 Maverick', 'DeepSeek V4.1 Flash 1017', 'Mistral Large 4', 'Qwen3.8-Max'],
       valueKey: 'direct_training_carbon_tco2e',
       formatValue: (value) => value >= 1000 ? `${{(value / 1000).toFixed(1)}} kt` : `${{value.toFixed(1)}} t`,
       intro: {{
-        en: 'Flagship GPT, Claude, and Grok models are isolated here to visualize the apparent acceleration of the current central training-screening values over time.',
-        fr: 'Les modèles phares GPT, Claude et Grok sont isolés ici pour visualiser l’accélération apparente des valeurs centrales actuelles de screening d’entraînement dans le temps.',
+        en: 'Recent flagship models from the OpenAI, Anthropic, Google, xAI, Meta, Mistral, DeepSeek, and Alibaba families are selected to show how the project’s central training-screening values change over time.',
+        fr: 'Des modèles phares récents d’OpenAI, Anthropic, Google, xAI, Meta, Mistral, DeepSeek et Alibaba sont sélectionnés pour montrer l’évolution des valeurs centrales du screening d’entraînement du projet.',
       }},
       xLabel: {{
         en: 'Model release month',
@@ -7772,7 +7870,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       if (value >= 100) return `${{value.toFixed(1)}} tCO2e`;
       return `${{value.toFixed(2)}} tCO2e`;
     }};
-    const buildTrainingChartMarkup = (rows, metric) => {{
+    const buildTrainingChartMarkup = (rows, metric, searchQuery = '') => {{
       const locale = uiText[currentLanguage.value];
       if (!rows.length) {{
         return `<p class="lead">${{locale.noData}}</p>`;
@@ -7780,6 +7878,7 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       const key = metric === 'direct_training_energy'
         ? 'direct_training_energy_wh'
         : 'direct_training_carbon_tco2e';
+      const normalizedQuery = String(searchQuery || '').trim().toLocaleLowerCase();
       const sorted = rows
         .map((row) => ({{
           label: translateBenchmarkLabel(row.label, currentLanguage.value),
@@ -7787,12 +7886,12 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
           value: Number(row[key] || 0),
           kind: row.kind || 'model',
         }}))
-        .filter((row) => row.value > 0)
+        .filter((row) => row.value > 0 && (!normalizedQuery || row.label.toLocaleLowerCase().includes(normalizedQuery) || String(row.provider || '').toLocaleLowerCase().includes(normalizedQuery)))
         .sort((a, b) => b.value - a.value);
       if (!sorted.length) {{
         return `<p class="lead">${{locale.noUsableValue}}</p>`;
       }}
-      const maxValue = sorted[0].value || 1;
+      const maxValue = Math.max(...sorted.map((row) => row.value)) || 1;
       const barHeight = 28;
       const rowGap = 22;
       const chartWidth = 980;
@@ -7831,8 +7930,9 @@ def render_page(result=None, description="", parsed_payload=None, parser_notes=N
       }} catch (error) {{
         rows = [];
       }}
-      trainingChart.innerHTML = buildTrainingChartMarkup(rows, metric);
+      trainingChart.innerHTML = buildTrainingChartMarkup(rows, metric, trainingChartFilter?.value || '');
     }};
+    trainingChartFilter?.addEventListener('input', renderTrainingChart);
     const renderTrainingScatterChart = () => {{
       if (!trainingScatterChart) return;
       let rows = [];
@@ -8018,6 +8118,12 @@ class Handler(BaseHTTPRequestHandler):
         normalized_path = self._normalized_path()
         if normalized_path != "/":
             self._write_html(render_page(error_message="Page not found."), status=404)
+            return
+        if not APPLICATION_ESTIMATOR_ENABLED:
+            self._write_html(
+                render_page(error_message="The application estimator is temporarily unavailable."),
+                status=503,
+            )
             return
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length).decode("utf-8")

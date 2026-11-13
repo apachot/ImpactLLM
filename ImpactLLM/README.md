@@ -132,8 +132,13 @@ Minimal configuration:
 
 ```bash
 OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=gpt-6.1-terra
+OPENAI_MODERATION_MODEL=gpt-6-luna
 ```
+
+## Market Model Catalog
+
+The market catalog is maintained in [`data/market_models.csv`](./data/market_models.csv) and its calculator reference profiles are synchronized to [`data/models.csv`](./data/models.csv) by `scripts/update_market_models.py`. Model release dates, availability, modalities, context limits, and disclosed parameter counts are linked to provider documentation. When a provider does not publish parameter counts, the catalog retains the project's screening proxy, marks it as estimated with low confidence, and records the proxy basis; these values are not provider measurements. Published counts remain marked as observed and cite the model card or release note. Screening energy and training estimates continue to use the project's documented methods and anchors.
 
 ## Deploy on a VPS
 

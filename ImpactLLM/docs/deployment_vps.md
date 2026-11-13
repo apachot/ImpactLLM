@@ -37,7 +37,8 @@ Create either `/opt/ImpactLLM/.env` or `/opt/ImpactLLM/web/.env`:
 
 ```bash
 OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=gpt-6.1-terra
+OPENAI_MODERATION_MODEL=gpt-6-luna
 ```
 
 ## 4. Test locally on the server
